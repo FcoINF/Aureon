@@ -1,0 +1,117 @@
+/* ==========================================================================
+   Aureon · Variables de diseño
+   Identidad: valor, estabilidad y un brillo dorado discreto.
+   ========================================================================== */
+
+:root {
+  /* Superficies */
+  --bg: #f6f5f2;
+  --bg-tint: #fbfaf7;
+  --surface: #ffffff;
+  --surface-alt: #faf9f6;
+  --surface-sunken: #f2f0ea;
+
+  /* Bordes */
+  --border: #e7e3da;
+  --border-strong: #d7d1c4;
+  --border-focus: #b08b4a;
+
+  /* Texto */
+  --text: #23211d;
+  --text-muted: #6b665d;
+  --text-soft: #948e83;
+  --text-inverse: #ffffff;
+
+  /* Acento dorado */
+  --accent: #b08b4a;
+  --accent-strong: #97743a;
+  --accent-soft: #f5ede0;
+  --accent-line: #e8dcc6;
+
+  /* Semánticos */
+  --income: #2f7a5a;
+  --income-soft: #e8f2ed;
+  --expense: #b0574b;
+  --expense-soft: #f8ecea;
+  --warning: #b9862b;
+  --warning-soft: #fbf1de;
+  --info: #3f6f9e;
+  --info-soft: #e9f0f7;
+
+  /* Espaciado */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radios */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Sombras */
+  --shadow-xs: 0 1px 2px rgba(35, 33, 29, 0.04);
+  --shadow-sm: 0 1px 3px rgba(35, 33, 29, 0.06);
+  --shadow-md: 0 4px 16px rgba(35, 33, 29, 0.08);
+  --shadow-lg: 0 12px 32px rgba(35, 33, 29, 0.12);
+
+  /* Tipografía */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+
+  /* Estructura */
+  --sidebar-width: 244px;
+  --header-height: 64px;
+  --content-max: 1240px;
+  --transition: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme='dark'] {
+  --bg: #171614;
+  --bg-tint: #1b1a17;
+  --surface: #201f1c;
+  --surface-alt: #262521;
+  --surface-sunken: #1a1917;
+
+  --border: #34322d;
+  --border-strong: #46433c;
+  --border-focus: #c9a55f;
+
+  --text: #eceae4;
+  --text-muted: #a9a49a;
+  --text-soft: #7d786f;
+  --text-inverse: #1a1917;
+
+  --accent: #c9a55f;
+  --accent-strong: #d9b871;
+  --accent-soft: #2b2619;
+  --accent-line: #3d3421;
+
+  --income: #63b892;
+  --income-soft: #1b2b24;
+  --expense: #d98076;
+  --expense-soft: #2e1f1d;
+  --warning: #d3a851;
+  --warning-soft: #2c2417;
+  --info: #7aa8d4;
+  --info-soft: #1b2530;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+}

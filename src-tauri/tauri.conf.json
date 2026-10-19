@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aureon",
+  "version": "0.1.0",
+  "identifier": "com.aureon.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Aureon",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 940,
+        "minHeight": 620,
+        "resizable": true,
+        "center": true,
+        "theme": "Light"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "category": "Finance",
+    "shortDescription": "Finanzas personales locales",
+    "longDescription": "Aureon es una aplicación de escritorio para administrar tus finanzas personales: cuentas, movimientos, compras en cuotas, suscripciones, cuentas por cobrar y por pagar, presupuestos y reportes. Todos tus datos permanecen en tu equipo.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Spanish"],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/aureon.nsi"
+      }
+    }
+  }
+}
