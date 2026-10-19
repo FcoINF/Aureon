@@ -2,6 +2,7 @@
 //!
 //! Esta capa no depende de Tauri: puede probarse de forma aislada.
 
+pub mod catalog;
 pub mod dates;
 pub mod db;
 pub mod error;

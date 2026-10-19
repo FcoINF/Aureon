@@ -3,6 +3,9 @@
  * Reflejan exactamente los modelos expuestos por los comandos nativos.
  */
 
+/** Formatos de fecha admitidos en Configuración. */
+export type DateFormat = 'DD/MM/AAAA' | 'AAAA-MM-DD' | 'MM/DD/AAAA';
+
 export interface Currency {
   code: string;
   name: string;
@@ -200,6 +203,7 @@ export interface Purchase {
   categoryId: string | null;
   categoryName: string | null;
   paidAmount: number;
+  refundedAmount: number;
   pendingAmount: number;
   installmentsPaid: number;
   installmentsPending: number;
@@ -621,7 +625,7 @@ export interface BackupResult {
 
 export interface AppSettings {
   defaultCurrency: string;
-  dateFormat: string;
+  dateFormat: DateFormat;
   theme: 'light' | 'dark';
   exportSeparator: string;
   backupFolder: string | null;

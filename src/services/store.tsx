@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { api } from './api';
+import { setDateFormat } from '../utils/format';
 import type { Account, AppSettings, Category, Currency } from '../types';
 
 interface AppData {
@@ -53,13 +54,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [loadedSettings, loadedCurrencies, loadedAccounts, loadedExpense, loadedIncome] =
+      const loadedSettings = await api.getSettings();
+      const [loadedCurrencies, loadedAccounts, loadedExpense, loadedIncome] =
         await Promise.all([
-          api.getSettings(),
           api.listCurrencies(),
           api.listAccounts(false),
-          api.listCategories('expense', false),
-          api.listCategories('income', false),
+          api.listCategories('expense', false, 'month', loadedSettings.defaultCurrency),
+          api.listCategories('income', false, 'month', loadedSettings.defaultCurrency),
         ]);
       setSettingsState(loadedSettings);
       setCurrencies(loadedCurrencies);
@@ -81,6 +82,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);
   }, [settings.theme]);
+
+  useEffect(() => {
+    setDateFormat(settings.dateFormat);
+  }, [settings.dateFormat]);
 
   const setSettings = useCallback(
     async (next: AppSettings) => {

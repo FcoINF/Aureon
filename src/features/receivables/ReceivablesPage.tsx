@@ -26,6 +26,7 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'partial', label: 'Parciales' },
   { value: 'paid', label: 'Pagadas' },
   { value: 'overdue', label: 'Vencidas' },
+  { value: 'cancelled', label: 'Canceladas' },
 ];
 
 const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
@@ -55,6 +56,18 @@ function statusBadgeClass(status: string): string {
     default:
       return 'badge';
   }
+}
+
+/**
+ * Aviso mostrado cuando no existe ninguna cuenta en la moneda del registro:
+ * el backend rechaza mover dinero entre cuentas de distinta moneda.
+ */
+function NoAccountsNotice({ id, currency }: { id: string; currency: string }) {
+  return (
+    <p id={id} className="field-hint">
+      No hay cuentas en {currency}. Crea una en Configuración → Cuentas.
+    </p>
+  );
 }
 
 /** Suma los saldos pendientes agrupados por moneda. */
@@ -362,6 +375,13 @@ function ReceiveModal({ receivable, accounts, onClose, onSaved }: ReceiveModalPr
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const currency = receivable?.currencyCode ?? '';
+  // El backend sólo admite cuentas de la misma moneda del cobro.
+  const currencyAccounts = useMemo(
+    () => accounts.filter((account) => account.currencyCode === currency),
+    [accounts, currency],
+  );
+
   useEffect(() => {
     if (!receivable) return;
     setAmount(receivable.pendingAmount);
@@ -378,6 +398,10 @@ function ReceiveModal({ receivable, accounts, onClose, onSaved }: ReceiveModalPr
     }
     if (amount > receivable.pendingAmount) {
       setError('El cobro supera el saldo pendiente.');
+      return;
+    }
+    if (currencyAccounts.length === 0) {
+      setError(`No hay cuentas en ${currency}. Crea una en Configuración → Cuentas.`);
       return;
     }
     if (!accountId) {
@@ -468,21 +492,25 @@ function ReceiveModal({ receivable, accounts, onClose, onSaved }: ReceiveModalPr
         </Field>
 
         <Field label="Cuenta donde entra el dinero" required className="span-2">
-          {(id) => (
-            <select
-              id={id}
-              className="select"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-            >
-              <option value="">Selecciona una cuenta</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {account.currencyCode}
-                </option>
-              ))}
-            </select>
-          )}
+          {(id) =>
+            currencyAccounts.length === 0 ? (
+              <NoAccountsNotice id={id} currency={currency} />
+            ) : (
+              <select
+                id={id}
+                className="select"
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+              >
+                <option value="">Selecciona una cuenta</option>
+                {currencyAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} · {account.currencyCode}
+                  </option>
+                ))}
+              </select>
+            )
+          }
         </Field>
       </div>
     </Modal>
@@ -688,9 +716,16 @@ export function ReceivablesPage() {
   const overdueCount = (all.data ?? []).filter((item) => item.status === 'overdue').length;
 
   const reloadAll = () => {
-    list.reload();
-    all.reload();
-    void refresh();
+    void (async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      list.reload();
+      all.reload();
+      void refresh();
+    })();
   };
 
   const handleDelete = async () => {
@@ -859,7 +894,18 @@ export function ReceivablesPage() {
                         </td>
                         <td className="num">
                           <Money value={item.pendingAmount} currency={item.currencyCode} />
-                          <div className="progress" style={{ marginTop: 4 }}>
+                          <div
+                            className="progress"
+                            style={{ marginTop: 4 }}
+                            role="progressbar"
+                            aria-valuenow={progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Cobrado: ${progress}% de ${formatCurrency(
+                              item.totalAmount,
+                              item.currencyCode,
+                            )}`}
+                          >
                             <div
                               className={`progress-bar${
                                 item.status === 'overdue' ? ' is-over' : ''
@@ -952,7 +998,7 @@ export function ReceivablesPage() {
         title="Eliminar cuenta por cobrar"
         message={
           deleting
-            ? `Se eliminará «${deleting.title}» y su historial de cobros. Esta acción no se puede deshacer.`
+            ? `Se eliminará «${deleting.title}» y su historial de cobros. El dinero ya cobrado no se revierte: permanece en la cuenta donde lo recibiste y en Movimientos. Esta acción no se puede deshacer.`
             : ''
         }
         confirmLabel="Eliminar"

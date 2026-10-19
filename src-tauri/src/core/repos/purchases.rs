@@ -14,6 +14,9 @@ const SELECT_PURCHASE: &str = "
            p.category_id, c.name,
            COALESCE((SELECT SUM(i.paid_amount) FROM purchase_installments i
                       WHERE i.purchase_id = p.id AND i.status <> 'cancelled'), 0) AS paid_amount,
+           COALESCE((SELECT SUM(t.amount) FROM transactions t
+                      WHERE t.linked_type = 'purchase' AND t.linked_id = p.id
+                        AND t.type = 'refund' AND t.voided = 0), 0) AS refunded_amount,
            COALESCE((SELECT SUM(i.amount - i.paid_amount) FROM purchase_installments i
                       WHERE i.purchase_id = p.id AND i.status <> 'cancelled' AND i.paid_amount < i.amount), 0) AS pending_amount,
            COALESCE((SELECT COUNT(*) FROM purchase_installments i
@@ -58,12 +61,13 @@ fn map_purchase(row: &Row<'_>) -> rusqlite::Result<Purchase> {
         category_id: row.get(22)?,
         category_name: row.get(23)?,
         paid_amount: row.get(24)?,
-        pending_amount: row.get(25)?,
-        installments_paid: row.get(26)?,
-        installments_pending: row.get(27)?,
-        installments_overdue: row.get(28)?,
-        next_due_date: row.get(29)?,
-        last_due_date: row.get(30)?,
+        refunded_amount: row.get(25)?,
+        pending_amount: row.get(26)?,
+        installments_paid: row.get(27)?,
+        installments_pending: row.get(28)?,
+        installments_overdue: row.get(29)?,
+        next_due_date: row.get(30)?,
+        last_due_date: row.get(31)?,
     })
 }
 
@@ -271,6 +275,7 @@ pub fn apply_installment_payment(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn insert_installment_payment(
     conn: &Connection,
     id: &str,

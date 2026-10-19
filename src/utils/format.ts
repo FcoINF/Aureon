@@ -151,12 +151,42 @@ export function isoFromDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Muestra las fechas como DD/MM/AAAA. */
+/**
+ * Formato de fecha activo de la aplicación.
+ *
+ * Aureon muestra las fechas en DD/MM/AAAA por defecto (convención chilena).
+ * El usuario puede cambiarlo en Configuración; el valor se registra aquí para
+ * que `formatDate` lo aplique de forma global sin tener que pasarlo en cada
+ * llamada.
+ */
+let formatoActivo: DateFormat = 'DD/MM/AAAA';
+
+export type DateFormat = 'DD/MM/AAAA' | 'AAAA-MM-DD' | 'MM/DD/AAAA';
+
+export function setDateFormat(format: DateFormat): void {
+  formatoActivo = format;
+}
+
+export function getDateFormat(): DateFormat {
+  return formatoActivo;
+}
+
+/** Muestra las fechas con el formato activo. */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const base = iso.split('T')[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return iso;
-  return `${base.slice(8, 10)}/${base.slice(5, 7)}/${base.slice(0, 4)}`;
+  const dia = base.slice(8, 10);
+  const mes = base.slice(5, 7);
+  const anio = base.slice(0, 4);
+  switch (formatoActivo) {
+    case 'AAAA-MM-DD':
+      return base;
+    case 'MM/DD/AAAA':
+      return `${mes}/${dia}/${anio}`;
+    default:
+      return `${dia}/${mes}/${anio}`;
+  }
 }
 
 export function formatDateTime(iso: string | null | undefined): string {

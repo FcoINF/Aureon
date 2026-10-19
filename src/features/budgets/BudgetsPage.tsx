@@ -12,7 +12,7 @@ import { ConfirmDialog, Modal } from '../../components/Modal';
 import { EmptyState, Field, PageHeader, Stat } from '../../components/Primitives';
 import { useToast } from '../../components/Toast';
 import { useAsync } from '../../hooks/useAsync';
-import { api } from '../../services/api';
+import { api, readError } from '../../services/api';
 import { useAppData } from '../../services/store';
 import type { Budget, BudgetInput, Currency } from '../../types';
 import { exponentOf, formatCurrency, formatDate, symbolOf, todayIso } from '../../utils/format';
@@ -141,22 +141,9 @@ function BudgetForm({
     setError(null);
     try {
       if (budget) {
-        // El presupuesto se reemplaza: se elimina el anterior y se guarda el
-        // nuevo con la misma categoría y moneda.
-        await api.deleteBudget(budget.id);
-        try {
-          await api.saveBudget(input);
-        } catch (err) {
-          await api
-            .saveBudget({
-              categoryId: budget.categoryId,
-              currencyCode: budget.currencyCode,
-              amount: budget.amount,
-              startDate: budget.startDate,
-            })
-            .catch(() => undefined);
-          throw err;
-        }
+        // Al editar se actualiza el presupuesto existente: así no se pisa el
+        // límite de otra categoría ni se pierde el historial del límite.
+        await api.updateBudget(budget.id, input);
         toast.success('Presupuesto actualizado.');
       } else {
         await api.saveBudget(input);
@@ -166,8 +153,7 @@ function BudgetForm({
       onSaved();
       onClose();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'No se pudo guardar el presupuesto.';
+      const message = readError(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -284,8 +270,8 @@ export function BudgetsPage() {
 
   const budgets = useAsync(() => api.listBudgets(), []);
   const categories = useAsync(
-    () => api.listCategories('expense', false, 'month'),
-    [],
+    () => api.listCategories('expense', false, 'month', settings.defaultCurrency),
+    [settings.defaultCurrency],
   );
 
   const items = budgets.data ?? [];
@@ -360,8 +346,7 @@ export function BudgetsPage() {
       categories.reload();
       await refresh();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'No se pudo eliminar el presupuesto.';
+      const message = readError(err);
       setActionError(message);
       toast.error(message);
     } finally {
@@ -493,7 +478,8 @@ export function BudgetsPage() {
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={Math.round(Math.min(100, percent))}
-                        aria-label={`Uso del presupuesto de ${budget.categoryName}`}
+                        aria-valuetext={`${Math.round(percent)}% del límite de ${budget.categoryName}`}
+                        aria-label={`Gasto de ${budget.categoryName}`}
                       >
                         <div
                           className={`progress-bar${
@@ -506,7 +492,8 @@ export function BudgetsPage() {
                       <div className="row-between text-sm">
                         <span className="text-muted">
                           Gastado{' '}
-                          <Money value={budget.periodSpent} currency={budget.currencyCode} />
+                          <Money value={budget.periodSpent} currency={budget.currencyCode} />{' '}
+                          <span className="text-soft">{budget.currencyCode}</span>
                         </span>
                         <span className={over ? 'amount amount-expense' : 'text-muted'}>
                           {over
@@ -561,7 +548,7 @@ export function BudgetsPage() {
                   <thead>
                     <tr>
                       <th>Categoría</th>
-                      <th className="num">Gastado este mes</th>
+                      <th className="num">Gastado este mes ({settings.defaultCurrency})</th>
                       <th />
                     </tr>
                   </thead>
@@ -595,8 +582,8 @@ export function BudgetsPage() {
                 </table>
               </div>
               <p className="text-sm text-soft" style={{ marginTop: 'var(--space-3)' }}>
-                Los montos se muestran en {settings.defaultCurrency}. Crea un
-                presupuesto para fijar un límite a estas categorías.
+                Los montos se muestran en {settings.defaultCurrency}, tu moneda por defecto.
+                Crea un presupuesto para fijar un límite a estas categorías.
               </p>
             </>
           )}

@@ -56,6 +56,19 @@ pub fn create(conn: &Connection, input: &AccountInput) -> AppResult<Account> {
 
 pub fn update(conn: &Connection, id: &str, input: &AccountInput) -> AppResult<Account> {
     let (name, account_type, currency, date) = validate(conn, input)?;
+
+    // Cambiar la moneda de una cuenta con movimientos reinterpreta importes
+    // que ya están registrados: se bloquea para no corromper el historial.
+    let current = repos::accounts::get(conn, id)?;
+    if current.currency_code != currency {
+        let movements = repos::accounts::movement_count(conn, id)?;
+        if movements > 0 {
+            return Err(AppError::validation(
+                "No se puede cambiar la moneda de una cuenta que ya tiene movimientos.",
+            ));
+        }
+    }
+
     let normalized = AccountInput {
         name,
         account_type,

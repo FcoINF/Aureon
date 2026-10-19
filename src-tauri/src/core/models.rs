@@ -228,6 +228,7 @@ pub struct Purchase {
     pub category_id: Option<String>,
     pub category_name: Option<String>,
     pub paid_amount: i64,
+    pub refunded_amount: i64,
     pub pending_amount: i64,
     pub installments_paid: i64,
     pub installments_pending: i64,

@@ -9,7 +9,7 @@ use aureon_lib::core::dates;
 use aureon_lib::core::models::*;
 use aureon_lib::core::repos;
 use aureon_lib::core::services::{
-    accounts, categories, deposits, export, payables, purchases, receivables, reports, settings,
+    accounts, budgets, categories, deposits, export, payables, purchases, receivables, reports, settings,
     subscriptions, transactions as tx_service, wishlist,
 };
 use aureon_lib::state::AppState;
@@ -182,7 +182,7 @@ fn las_migraciones_se_aplican_sin_destruir_datos() {
     // La segunda apertura no debe duplicar ni perder nada.
     assert_eq!(balance(&state, &account_id), 0);
     let categories = state
-        .read(|conn| Ok(categories::list_categories(conn, Some("expense"), false, ("2024-01-01", "2024-12-31"))?))
+        .read(|conn| Ok(categories::list_categories(conn, Some("expense"), false, ("2024-01-01", "2024-12-31"), None)?))
         .unwrap()
         .unwrap();
     assert!(!categories.is_empty(), "las categorías por defecto deben estar");
@@ -803,7 +803,7 @@ fn una_cuenta_por_cobrar_suma_al_cuenta_solo_cuando_se_recibe() {
                     total_amount: 50_000,
                     currency_code: "CLP".to_string(),
                     origin_date: "2024-03-01".to_string(),
-                    due_date: Some("2024-04-01".to_string()),
+                    due_date: Some("2099-04-01".to_string()),
                     notes: None,
                 },
                 "CLP",
@@ -1637,6 +1637,505 @@ fn el_modo_wal_permite_lecturas_concurrentes() {
         .unwrap()
         .unwrap();
     assert_eq!(modo.to_lowercase(), "wal");
+}
+
+#[test]
+fn no_se_puede_cambiar_la_moneda_de_una_cuenta_con_movimientos() {
+    let (state, _dir) = new_state("currency-change");
+    let cuenta = create_account(&state, "Efectivo", "cash", "CLP", 10_000);
+    transaction(&state, "income", "Sueldo", 50_000, &cuenta, None, "2024-03-01");
+
+    let resultado = state.write(|conn| {
+        accounts::update(
+            conn,
+            &cuenta,
+            &AccountInput {
+                name: "Efectivo".to_string(),
+                account_type: "cash".to_string(),
+                currency_code: "USD".to_string(),
+                initial_balance: 10_000,
+                initial_balance_date: "2024-01-01".to_string(),
+                archived: Some(false),
+                description: None,
+            },
+        )
+    });
+    assert!(
+        resultado.is_err(),
+        "cambiar la moneda reinterpretaría los importes ya registrados"
+    );
+
+    // Sin movimientos, el cambio sí se permite.
+    let otra = create_account(&state, "Ahorro", "savings", "CLP", 0);
+    let cambio = state.write(|conn| {
+        accounts::update(
+            conn,
+            &otra,
+            &AccountInput {
+                name: "Ahorro".to_string(),
+                account_type: "savings".to_string(),
+                currency_code: "USD".to_string(),
+                initial_balance: 0,
+                initial_balance_date: "2024-01-01".to_string(),
+                archived: Some(false),
+                description: None,
+            },
+        )
+    });
+    assert!(cambio.is_ok());
+}
+
+#[test]
+fn no_se_puede_registrar_un_movimiento_en_una_cuenta_de_otra_moneda() {
+    let (state, _dir) = new_state("currency-mismatch");
+    let clp = create_account(&state, "Peso", "cash", "CLP", 0);
+    let usd = create_account(&state, "Dolar", "savings", "USD", 0);
+
+    let resultado = state.write(|conn| {
+        tx_service::create(
+            conn,
+            &TransactionInput {
+                transaction_type: "expense".to_string(),
+                description: "Compra en dolares".to_string(),
+                amount: 1000,
+                currency_code: "USD".to_string(),
+                date: "2024-03-01".to_string(),
+                category_id: None,
+                account_id: Some(clp.clone()),
+                transfer_account_id: None,
+                contact_id: None,
+                payment_method: None,
+                notes: None,
+                tags: None,
+                related_transaction_id: None,
+            },
+        )
+    });
+    assert!(
+        resultado.is_err(),
+        "un importe en dolares no puede sumarse a una cuenta en pesos"
+    );
+
+    // Con la cuenta correcta sí se registra.
+    let ok = state.write(|conn| {
+        tx_service::create(
+            conn,
+            &TransactionInput {
+                transaction_type: "expense".to_string(),
+                description: "Compra en dolares".to_string(),
+                amount: 1000,
+                currency_code: "USD".to_string(),
+                date: "2024-03-01".to_string(),
+                category_id: None,
+                account_id: Some(usd.clone()),
+                transfer_account_id: None,
+                contact_id: None,
+                payment_method: None,
+                notes: None,
+                tags: None,
+                related_transaction_id: None,
+            },
+        )
+    });
+    assert!(ok.is_ok());
+    assert_eq!(balance(&state, &usd), -1000);
+    assert_eq!(balance(&state, &clp), 0);
+}
+
+#[test]
+fn un_cobro_parcial_no_saca_la_deuda_de_la_categoria_vencida() {
+    let (state, _dir) = new_state("partial-overdue");
+    let cuenta = create_account(&state, "Efectivo", "cash", "CLP", 0);
+    let por_cobrar = state
+        .write(|conn| {
+            receivables::create(
+                conn,
+                &ReceivableInput {
+                    contact_id: None,
+                    contact_name: Some("Ana".to_string()),
+                    title: "Prestamo".to_string(),
+                    kind: None,
+                    total_amount: 50_000,
+                    currency_code: "CLP".to_string(),
+                    origin_date: "2020-01-01".to_string(),
+                    due_date: Some("2020-02-01".to_string()),
+                    notes: None,
+                },
+                "CLP",
+            )
+        })
+        .unwrap();
+
+    state
+        .write(|conn| {
+            receivables::receive(
+                conn,
+                &por_cobrar.id,
+                &ReceivablePaymentInput {
+                    amount: 10_000,
+                    received_at: dates::today_str(),
+                    account_id: Some(cuenta.clone()),
+                },
+            )
+        })
+        .unwrap();
+
+    let actualizada = state
+        .read(|conn| Ok(receivables::get(conn, &por_cobrar.id)?))
+        .unwrap()
+        .unwrap();
+    assert_eq!(actualizada.received_amount, 10_000);
+    assert_eq!(
+        actualizada.status, "overdue",
+        "la deuda sigue vencida tras un cobro parcial"
+    );
+}
+
+#[test]
+fn no_se_puede_duplicar_un_presupuesto_para_la_misma_categoria_y_moneda() {
+    let (state, _dir) = new_state("budget-duplicate");
+    create_account(&state, "Efectivo", "cash", "CLP", 0);
+    let categorias = state
+        .read(|conn| {
+            Ok(repos::categories::list(
+                conn,
+                Some("expense"),
+                false,
+                ("2024-01-01", "2024-12-31"),
+                None,
+            )?)
+        })
+        .unwrap()
+        .unwrap();
+    let primera = categorias[0].id.clone();
+    let segunda = categorias[1].id.clone();
+
+    let creado = state
+        .write(|conn| {
+            budgets::upsert(
+                conn,
+                &BudgetInput {
+                    category_id: primera.clone(),
+                    currency_code: "CLP".to_string(),
+                    amount: 100_000,
+                    start_date: None,
+                    end_date: None,
+                },
+            )
+        })
+        .unwrap();
+    let creado_id = creado.id.clone();
+
+    // Editar el presupuesto para que caiga en otra categoría ya presupuestada
+    // debe rechazarse en lugar de sobrescribir el límite existente.
+    let segunda_con_presupuesto = state
+        .write(|conn| {
+            budgets::upsert(
+                conn,
+                &BudgetInput {
+                    category_id: segunda.clone(),
+                    currency_code: "CLP".to_string(),
+                    amount: 50_000,
+                    start_date: None,
+                    end_date: None,
+                },
+            )
+        })
+        .unwrap();
+
+    let choque = state.write(|conn| {
+        budgets::update(
+            conn,
+            &creado_id,
+            &BudgetInput {
+                category_id: segunda_con_presupuesto.category_id.clone(),
+                currency_code: "CLP".to_string(),
+                amount: 200_000,
+                start_date: None,
+                end_date: None,
+            },
+        )
+    });
+    assert!(choque.is_err(), "no se puede duplicar el par categoría/moneda");
+
+    // El presupuesto original sigue intacto.
+    let lista = state
+        .read(|conn| {
+            let (start, end) = dates::period_range("month", 0)?;
+            Ok(budgets::list(conn, (&start, &end))?)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(lista.len(), 2);
+}
+
+#[test]
+fn la_exportacion_usa_el_separador_configurado_y_no_se_trunca() {
+    let (state, _dir) = new_state("export-separator");
+    let cuenta = create_account(&state, "Efectivo", "cash", "CLP", 0);
+    for indice in 0..600 {
+        transaction(
+            &state,
+            "expense",
+            &format!("Compra {indice}"),
+            1_000,
+            &cuenta,
+            None,
+            "2024-03-01",
+        );
+    }
+
+    state
+        .write(|conn| {
+            settings::save(
+                conn,
+                &settings::AppSettings {
+                    default_currency: "CLP".to_string(),
+                    date_format: "DD/MM/AAAA".to_string(),
+                    theme: "light".to_string(),
+                    export_separator: ",".to_string(),
+                    backup_folder: None,
+                    week_starts_on_monday: true,
+                },
+            )
+        })
+        .unwrap();
+
+    let csv = state
+        .read(|conn| {
+            Ok(export::transactions_csv(
+                conn,
+                &TransactionFilter {
+                    include_voided: Some(true),
+                    ..Default::default()
+                },
+            )?)
+        })
+        .unwrap()
+        .unwrap();
+
+    let lineas: Vec<&str> = csv.lines().collect();
+    assert_eq!(lineas.len(), 601, "se exportan las 600 filas más la cabecera");
+    assert!(
+        lineas[0].contains(',') && !lineas[0].contains(';'),
+        "se usa el separador configurado"
+    );
+    assert!(csv.contains("Compra 0"), "no se trunca el archivo");
+    assert!(csv.contains("Compra 599"), "están todas las filas");
+}
+
+#[test]
+fn no_se_puede_marcar_como_pagado_sin_registrar_el_cobro() {
+    let (state, _dir) = new_state("manual-paid");
+    let cuenta = create_account(&state, "Efectivo", "cash", "CLP", 0);
+    let por_cobrar = state
+        .write(|conn| {
+            receivables::create(
+                conn,
+                &ReceivableInput {
+                    contact_id: None,
+                    contact_name: Some("Ana".to_string()),
+                    title: "Prestamo".to_string(),
+                    kind: None,
+                    total_amount: 50_000,
+                    currency_code: "CLP".to_string(),
+                    origin_date: "2024-03-01".to_string(),
+                    due_date: None,
+                    notes: None,
+                },
+                "CLP",
+            )
+        })
+        .unwrap();
+
+    let marcado = state.write(|conn| receivables::set_status(conn, &por_cobrar.id, "paid"));
+    assert!(
+        marcado.is_err(),
+        "marcar pagado sin registrar el cobro dejaría la fila incoherente"
+    );
+
+    // Cancelar sí se permite: no mueve dinero.
+    let cancelado = state
+        .write(|conn| receivables::set_status(conn, &por_cobrar.id, "cancelled"))
+        .unwrap();
+    assert_eq!(cancelado.status, "cancelled");
+    assert_eq!(balance(&state, &cuenta), 0);
+}
+
+#[test]
+fn una_persona_no_puede_participar_dos_veces_en_la_misma_suscripcion() {
+    let (state, _dir) = new_state("share-duplicate");
+    let cuenta = create_account(&state, "Tarjeta", "credit_card", "CLP", 0);
+    let suscripcion = state
+        .write(|conn| subscriptions::create(conn, &subscription_input(9_990, &cuenta), "CLP"))
+        .unwrap();
+
+    let contacto = state
+        .write(|conn| {
+            let contacto = ContactInput {
+                name: "Juan".to_string(),
+                kind: "person".to_string(),
+                notes: None,
+            };
+            Ok(aureon_lib::core::services::categories::create_contact(conn, &contacto)?)        })
+        .unwrap();
+
+    let compartido = state
+        .write(|conn| {
+            subscriptions::add_share(
+                conn,
+                &suscripcion.id,
+                &SubscriptionShareInput {
+                    contact_id: contacto.id.clone(),
+                    share_type: "percent".to_string(),
+                    share_value: 50,
+                    receivable_id: None,
+                },
+            )
+        })
+        .unwrap();
+    assert_eq!(compartido.share_value, 50);
+
+    let repetido = state.write(|conn| {
+        subscriptions::add_share(
+            conn,
+            &suscripcion.id,
+            &SubscriptionShareInput {
+                contact_id: contacto.id.clone(),
+                share_type: "percent".to_string(),
+                share_value: 30,
+                receivable_id: None,
+            },
+        )
+    });
+    assert!(repetido.is_err(), "no se puede añadir dos veces a la misma persona");
+}
+
+#[test]
+fn una_base_vacia_se_aparta_y_no_deja_la_aplicacion_sin_datos() {
+    // Un archivo de 0 bytes (por ejemplo, tras un cierre abrupto durante la
+    // creación) no debe dejar la aplicación con una base rota.
+    let dir = temp_dir("empty-db");
+    let path = dir.join("aureon.db");
+    std::fs::write(&path, b"").unwrap();
+
+    let state = AppState::new(dir.clone());
+    assert!(!state.init().unwrap(), "una base vacía no cuenta como base de datos");
+    assert!(!state.has_db());
+    assert!(!path.exists(), "el archivo vacío se aparta");
+
+    // Y la aplicación sigue funcionando: la primera escritura crea la base.
+    let cuenta = create_account(&state, "Efectivo", "cash", "CLP", 0);
+    assert_eq!(balance(&state, &cuenta), 0);
+
+    let tablas: i64 = state
+        .read(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN
+                 ('accounts','categories','contacts','transactions','subscriptions',
+                  'subscription_payments','purchases','purchase_installments',
+                  'installment_payments','receivables','receivable_payments','payables',
+                  'payable_payments','deposits','budgets','wishlist_items','settings',
+                  'schema_migrations')",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(tablas, 18, "la base nueva debe quedar con el esquema completo");
+}
+
+#[test]
+fn el_catalogo_coincide_con_la_base_de_datos() {
+    // El catálogo de referencia (monedas y categorías por defecto) y lo que
+    // siembra la migración no pueden divergir: si divergen, la instalación
+    // nueva mostraría una cosa y la existente otra.
+    let (state, _dir) = new_state("catalog");
+    create_account(&state, "Efectivo", "cash", "CLP", 0);
+
+    let monedas_db: Vec<(String, String, String, i64)> = state
+        .read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT code, name, symbol, exponent FROM currencies ORDER BY code",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap()
+        .unwrap();
+
+    let monedas_catalogo: Vec<(String, String, String, i64)> =
+        aureon_lib::core::catalog::monedas()
+            .into_iter()
+            .map(|m| (m.code, m.name, m.symbol, m.exponent as i64))
+            .collect();
+    // La migración inserta en orden CLP, USD, EUR; el catálogo sigue ese mismo
+    // orden. Se ordena ambos conjuntos por código para comparar sin depender
+    // del orden de inserción.
+    let mut monedas_db_ordenadas = monedas_db.clone();
+    monedas_db_ordenadas.sort();
+    let mut monedas_catalogo_ordenadas = monedas_catalogo.clone();
+    monedas_catalogo_ordenadas.sort();
+    assert_eq!(monedas_db_ordenadas, monedas_catalogo_ordenadas);
+
+    let categorias_db: Vec<(String, String, String, String)> = state
+        .read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, kind, color FROM categories ORDER BY id",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap()
+        .unwrap();
+
+    let categorias_catalogo: Vec<(String, String, String, String)> =
+        aureon_lib::core::catalog::categorias(None)
+            .into_iter()
+            .map(|c| (c.id, c.name, c.kind, c.color.unwrap_or_default()))
+            .collect();
+    let mut categorias_db = categorias_db.clone();
+    categorias_db.sort();
+    let mut categorias_catalogo = categorias_catalogo.clone();
+    categorias_catalogo.sort();
+    assert_eq!(categorias_db, categorias_catalogo);
+}
+
+#[test]
+fn sin_base_de_datos_las_listas_de_referencia_siguen_disponibles() {
+    // En una instalación recién estrenada, las monedas y las categorías por
+    // defecto deben estar disponibles aunque no exista todavía el archivo.
+    let (state, _dir) = new_state("catalog-sin-db");
+    assert!(!state.has_db());
+
+    let monedas = state.read_or(repos::list_currencies).unwrap_or_default();
+    assert!(monedas.is_empty(), "sin base de datos la consulta no devuelve nada");
+    let catalogo = aureon_lib::core::catalog::monedas();
+    assert_eq!(catalogo.len(), 3);
+    assert_eq!(catalogo[0].code, "CLP");
+    assert_eq!(catalogo[1].code, "USD");
+    assert_eq!(catalogo[2].code, "EUR");
+    assert_eq!(catalogo[0].exponent, 0);
+    assert_eq!(catalogo[1].exponent, 2);
+
+    let categorias = aureon_lib::core::catalog::categorias(Some("expense"));
+    assert!(!categorias.is_empty());
+    assert!(categorias.iter().all(|c| c.kind == "expense"));
 }
 
 #[test]

@@ -222,6 +222,7 @@ pub fn list_all_payments(conn: &Connection) -> AppResult<Vec<SubscriptionPayment
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from_sqlite)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn insert_payment(
     conn: &Connection,
     id: &str,

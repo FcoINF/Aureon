@@ -9,7 +9,8 @@ const SELECT_BUDGET: &str = "
     SELECT b.id, b.category_id, c.name, b.currency_code, b.amount, b.start_date, b.end_date,
            COALESCE((SELECT SUM(t.amount) FROM transactions t
                       WHERE t.category_id = b.category_id AND t.voided = 0
-                        AND t.type = 'expense' AND t.date >= ?1 AND t.date <= ?2), 0) AS period_spent
+                        AND t.type = 'expense' AND t.currency_code = b.currency_code
+                        AND t.date >= ?1 AND t.date <= ?2), 0) AS period_spent
     FROM budgets b
     JOIN categories c ON c.id = b.category_id";
 
@@ -80,6 +81,38 @@ pub fn upsert(conn: &Connection, id: &str, input: &BudgetInput, created_at: &str
             Ok(id.to_string())
         }
     }
+}
+
+/// Actualiza un presupuesto existente. Rechaza que el par
+/// (categoría, moneda) quede duplicado con otro presupuesto.
+pub fn update(conn: &Connection, id: &str, input: &BudgetInput) -> AppResult<()> {
+    let duplicado: Option<String> = conn
+        .query_row(
+            "SELECT id FROM budgets WHERE category_id = ?1 AND currency_code = ?2 AND id <> ?3",
+            params![input.category_id, input.currency_code, id],
+            |row| row.get(0),
+        )
+        .ok();
+    if duplicado.is_some() {
+        return Err(AppError::conflict(
+            "Ya existe un presupuesto para esa categoría y esa moneda.",
+        ));
+    }
+    let changed = conn
+        .execute(
+            "UPDATE budgets SET amount = ?2, start_date = ?3, end_date = ?4 WHERE id = ?1",
+            params![
+                id,
+                input.amount,
+                input.start_date.clone().unwrap_or_default(),
+                input.end_date
+            ],
+        )
+        .map_err(AppError::from_sqlite)?;
+    if changed == 0 {
+        return Err(AppError::not_found("El presupuesto no existe."));
+    }
+    Ok(())
 }
 
 pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {

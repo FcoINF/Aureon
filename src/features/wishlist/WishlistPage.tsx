@@ -14,7 +14,7 @@ import type {
   WishlistItem,
   WishlistStatus,
 } from '../../types';
-import { formatDate, statusLabel, todayIso } from '../../utils/format';
+import { exponentOf, formatDate, statusLabel, todayIso } from '../../utils/format';
 
 const STATUS_OPTIONS: { value: WishlistStatus; label: string }[] = [
   { value: 'wanted', label: 'Deseado' },
@@ -123,6 +123,24 @@ function WishlistForm({ open, item, onClose, onSaved }: WishlistFormProps) {
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  /**
+   * Al cambiar la moneda, los importes se convierten al exponente de la nueva
+   * moneda: el número escrito conserva su valor real y no cambia de significado.
+   */
+  const handleCurrencyChange = (next: string) => {
+    setForm((current) => {
+      const factor = 10 ** (exponentOf(next) - exponentOf(current.currency));
+      const convert = (value: number | null): number | null =>
+        value === null ? null : Math.round(value * factor);
+      return {
+        ...current,
+        currency: next,
+        estimatedPrice: convert(current.estimatedPrice),
+        savingsGoal: convert(current.savingsGoal),
+      };
+    });
   };
 
   const handleSave = async () => {
@@ -268,7 +286,7 @@ function WishlistForm({ open, item, onClose, onSaved }: WishlistFormProps) {
                 id={id}
                 className="select"
                 value={form.currency}
-                onChange={(event) => update('currency', event.target.value)}
+                onChange={(event) => handleCurrencyChange(event.target.value)}
               >
                 {currencies.map((currency) => (
                   <option key={currency.code} value={currency.code}>
@@ -371,12 +389,13 @@ interface ConvertFormState {
 }
 
 interface ConvertModalProps {
+  open: boolean;
   item: WishlistItem | null;
   onClose: () => void;
   onConverted: () => void;
 }
 
-function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
+function ConvertModal({ open, item, onClose, onConverted }: ConvertModalProps) {
   const { accounts } = useAppData();
   const toast = useToast();
   const [form, setForm] = useState<ConvertFormState>({
@@ -389,8 +408,10 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // El formulario se reinicia al abrir el modal, no cada vez que la lista se
+  // actualiza: depende de la apertura y del producto abierto.
   useEffect(() => {
-    if (!item) return;
+    if (!open || !item) return;
     setError(null);
     setForm({
       purchaseDate: todayIso(),
@@ -399,7 +420,12 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
       installmentsCount: '1',
       firstDueDate: todayIso(),
     });
-  }, [item]);
+  }, [open, item?.id]);
+
+  // El backend sólo admite cuentas de la misma moneda que la compra.
+  const currencyAccounts = item
+    ? accounts.filter((account) => account.currencyCode === item.currencyCode)
+    : [];
 
   const update = <K extends keyof ConvertFormState>(
     key: K,
@@ -434,6 +460,8 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
       firstDueDate: form.firstDueDate || form.purchaseDate,
       frequency: 'monthly',
       accountId: form.accountId || null,
+      // Sin esto, el gasto de las cuotas queda sin categoría.
+      categoryId: item.categoryId ?? null,
       paidImmediately: false,
       notes: item.notes,
     };
@@ -454,7 +482,7 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
 
   return (
     <Modal
-      open={item !== null}
+      open={open}
       title="Convertir en compra"
       subtitle="Crearás una compra con su calendario de cuotas. Convertir NO registra ningún gasto: el movimiento aparece sólo cuando pagues una cuota o registres la operación."
       onClose={onClose}
@@ -507,21 +535,33 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
               )}
             </Field>
 
-            <Field label="Cuenta" hint="Opcional: se asocia al pago de las cuotas">
+            <Field
+              label="Cuenta"
+              hint="Opcional: se asocia al pago de las cuotas"
+            >
               {(id) => (
-                <select
-                  id={id}
-                  className="select"
-                  value={form.accountId}
-                  onChange={(event) => update('accountId', event.target.value)}
-                >
-                  <option value="">Sin cuenta</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name} · {account.currencyCode}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    id={id}
+                    className="select"
+                    value={form.accountId}
+                    onChange={(event) => update('accountId', event.target.value)}
+                  >
+                    <option value="">Sin cuenta</option>
+                    {currencyAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} · {account.currencyCode}
+                      </option>
+                    ))}
+                  </select>
+                  {currencyAccounts.length === 0 ? (
+                    <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                      No tienes cuentas en {item.currencyCode}. Puedes convertir el
+                      producto igual, pero no podrás pagar sus cuotas hasta crear una
+                      cuenta en {item.currencyCode}.
+                    </p>
+                  ) : null}
+                </>
               )}
             </Field>
 
@@ -856,6 +896,7 @@ export function WishlistPage() {
       />
 
       <ConvertModal
+        open={converting !== null}
         item={converting}
         onClose={() => setConverting(null)}
         onConverted={() => {

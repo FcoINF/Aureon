@@ -45,8 +45,22 @@ pub fn create_new(path: &Path) -> AppResult<Connection> {
         })?;
     }
     let mut conn = connect(path)?;
-    migrations::migrate(&mut conn)?;
+    if let Err(error) = migrations::migrate(&mut conn) {
+        // No se deja un archivo vacío: la aplicación no debe quedar con una
+        // base de datos a medio crear.
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+        return Err(error);
+    }
     Ok(conn)
+}
+
+/// Devuelve `true` si el archivo no contiene información (0 bytes).
+pub fn is_empty_file(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(meta) => meta.len() == 0,
+        Err(_) => false,
+    }
 }
 
 /// Comprueba si un archivo SQLite es utilizable (no corrupto).
@@ -54,7 +68,7 @@ pub fn is_readable_database(path: &Path) -> bool {
     match Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) {
         Ok(conn) => conn
             .query_row("PRAGMA quick_check", [], |row| {
-                Ok(row.get::<_, String>(0)?)
+                row.get::<_, String>(0)
             })
             .map(|result| result == "ok")
             .unwrap_or(false),

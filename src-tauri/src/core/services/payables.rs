@@ -171,6 +171,14 @@ pub fn pay(
     let new_paid = payable.paid_amount + amount;
     let status = if new_paid >= payable.total_amount {
         "paid"
+    } else if payable
+        .due_date
+        .as_deref()
+        .map(|d| d < dates::today_str().as_str())
+        .unwrap_or(false)
+    {
+        // Un pago parcial no saca la obligación de la categoría «vencida».
+        "overdue"
     } else {
         "partial"
     };
@@ -184,6 +192,13 @@ pub fn set_status(conn: &Connection, id: &str, status: &str) -> AppResult<Payabl
     let valid = ["pending", "partial", "paid", "cancelled", "overdue"];
     if !valid.contains(&status) {
         return Err(AppError::validation("El estado indicado no es válido."));
+    }
+    let current = repos::payables::get(conn, id)?;
+    if status == "paid" && current.total_amount - current.paid_amount > 0 {
+        // Marcar «pagado» sin registrar el pago dejaría la fila incoherente.
+        return Err(AppError::validation(
+            "Para marcar como pagado registra el pago: así el saldo pendiente queda en cero.",
+        ));
     }
     repos::payables::set_status(conn, id, status)?;
     repos::payables::get(conn, id)

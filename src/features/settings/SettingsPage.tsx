@@ -8,7 +8,7 @@ import { useToast } from '../../components/Toast';
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../services/api';
 import { useAppData } from '../../services/store';
-import type { AppSettings, Category, CategoryKind } from '../../types';
+import type { AppSettings, Category, CategoryKind, DateFormat } from '../../types';
 import { todayIso } from '../../utils/format';
 const DATE_FORMATS = [
   { value: 'DD/MM/AAAA', label: 'DD/MM/AAAA (31/12/2026)' },
@@ -34,6 +34,16 @@ const CATEGORY_COLORS = ['#b08b4a', '#4c7ba8', '#3f8a7a', '#b0574b', '#7a62a8', 
 
 export function SettingsPage() {
   const { settings, currencies, setSettings, refresh } = useAppData();
+  // En una instalacion recien estrenada la base de datos no existe todavia,
+  // asi que las monedas vienen del catalogo de referencia del backend.
+  const catalogoMonedas =
+    currencies.length > 0
+      ? currencies
+      : [
+          { code: 'CLP', name: 'Peso chileno', symbol: '$', exponent: 0 },
+          { code: 'USD', name: 'Dolar estadounidense', symbol: 'US$', exponent: 2 },
+          { code: 'EUR', name: 'Euro', symbol: 'EUR', exponent: 2 },
+        ];
   const toast = useToast();
 
   const [form, setForm] = useState<AppSettings>(settings);
@@ -243,9 +253,9 @@ export function SettingsPage() {
                   value={form.defaultCurrency}
                   onChange={(event) => update('defaultCurrency', event.target.value)}
                 >
-                  {currencies.map((currency) => (
+                  {catalogoMonedas.map((currency) => (
                     <option key={currency.code} value={currency.code}>
-                      {currency.code} · {currency.name}
+                      {currency.code} - {currency.name}
                     </option>
                   ))}
                 </select>
@@ -258,7 +268,7 @@ export function SettingsPage() {
                   id={id}
                   className="select"
                   value={form.dateFormat}
-                  onChange={(event) => update('dateFormat', event.target.value)}
+                  onChange={(event) => update('dateFormat', event.target.value as DateFormat)}
                 >
                   {DATE_FORMATS.map((option) => (
                     <option key={option.value} value={option.value}>

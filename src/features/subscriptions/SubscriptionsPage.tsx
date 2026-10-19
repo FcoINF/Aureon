@@ -72,25 +72,52 @@ export function SubscriptionsPage() {
   const list = useAsync(() => api.listSubscriptions(status || undefined), [status]);
   const items = list.data ?? [];
 
+  useEffect(() => {
+    const sync = async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      list.reload();
+      all.reload();
+    };
+    void sync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Todas las cifras se expressan en la moneda principal, incluidos los
+  // contadores: así el resumen no mezcla universos distintos.
   const stats = useMemo(() => {
     const subscriptions = all.data ?? [];
     const currency = settings.defaultCurrency;
     const active = subscriptions.filter((item) => item.status === 'active');
+    const inCurrency = subscriptions.filter((item) => item.currencyCode === currency);
     const monthly = active
       .filter((item) => item.currencyCode === currency)
       .reduce((acc, item) => acc + item.monthlyEstimate, 0);
     const yearly = active
       .filter((item) => item.currencyCode === currency)
       .reduce((acc, item) => acc + item.yearlyEstimate, 0);
-    const paid = subscriptions
-      .filter((item) => item.currencyCode === currency)
-      .reduce((acc, item) => acc + item.paidTotal, 0);
-    const paymentCount = subscriptions.reduce(
-      (acc, item) => acc + item.paymentCount,
-      0,
-    );
-    return { currency, monthly, yearly, paid, paymentCount, active: active.length };
+    const paid = inCurrency.reduce((acc, item) => acc + item.paidTotal, 0);
+    const paymentCount = inCurrency.reduce((acc, item) => acc + item.paymentCount, 0);
+    const activeCount = active.filter((item) => item.currencyCode === currency).length;
+    return { currency, monthly, yearly, paid, paymentCount, active: activeCount };
   }, [all.data, settings.defaultCurrency]);
+
+  /** Refresca los vencimientos y vuelve a cargar la lista de suscripciones. */
+  const handleChanged = () => {
+    void (async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      list.reload();
+      all.reload();
+      await refresh();
+    })();
+  };
 
   const handleStatus = async (subscription: Subscription, next: string) => {
     try {
@@ -102,9 +129,7 @@ export function SubscriptionsPage() {
             ? 'Suscripción pausada.'
             : 'Estado de la suscripción actualizado.',
       );
-      list.reload();
-      all.reload();
-      await refresh();
+      handleChanged();
     } catch (err) {
       toast.error(
         err instanceof Error
@@ -122,9 +147,7 @@ export function SubscriptionsPage() {
       toast.success('Suscripción cancelada.');
       setCancelling(null);
       setDetailId(null);
-      list.reload();
-      all.reload();
-      await refresh();
+      handleChanged();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'No se pudo cancelar la suscripción.',
@@ -170,12 +193,12 @@ export function SubscriptionsPage() {
         <Stat
           label="Suscripciones activas"
           value={String(stats.active)}
-          meta="En total, sin importar el filtro"
+          meta={`Sólo suscripciones en ${stats.currency}`}
         />
         <Stat
           label="Total de pagos registrados"
           value={formatCurrency(stats.paid, stats.currency)}
-          meta={`${stats.paymentCount} cobro${stats.paymentCount === 1 ? '' : 's'} en el historial`}
+          meta={`${stats.paymentCount} cobro${stats.paymentCount === 1 ? '' : 's'} en el historial de ${stats.currency}`}
         />
       </div>
 
@@ -308,6 +331,7 @@ export function SubscriptionsPage() {
                             title="Registrar cobro"
                             aria-label={`Registrar cobro de ${item.name}`}
                             onClick={() => openDetail(item.id, true)}
+                            disabled={item.status === 'cancelled'}
                           >
                             <Icon name="coins" size={14} />
                           </button>
@@ -387,11 +411,7 @@ export function SubscriptionsPage() {
             setDetailId(null);
             setChargeOnOpen(false);
           }}
-          onChanged={() => {
-            list.reload();
-            all.reload();
-            void refresh();
-          }}
+          onChanged={handleChanged}
           onRequestCancel={(subscription) => setCancelling(subscription)}
         />
       ) : null}
@@ -459,12 +479,22 @@ function SubscriptionDetailModal({
   const data = subscription.data;
   const currency = data?.currencyCode ?? 'CLP';
   const subscriptionUrl = data?.url ?? null;
+  // El backend sólo admite cuentas de la misma moneda que la suscripción.
+  const currencyAccounts = accounts.filter(
+    (account) => account.currencyCode === currency,
+  );
 
   const startCharge = () => {
     setCharging(true);
+    // Si el formulario ya está abierto, no se borra lo que el usuario escribió.
+    if (charging) return;
     setChargeAmount(data ? data.amount : null);
     setChargeDate(todayIso());
-    setChargeAccount(data?.accountId ?? '');
+    setChargeAccount(
+      currencyAccounts.some((account) => account.id === data?.accountId)
+        ? (data?.accountId ?? '')
+        : '',
+    );
     setError(null);
   };
 
@@ -718,22 +748,30 @@ function SubscriptionDetailModal({
                 <Field
                   label="Cuenta"
                   className="span-2"
-                  hint="Si la dejas vacía se usa la cuenta de la suscripción."
+                  hint="Si la dejas vacía se usa la cuenta de la suscripción; si la suscripción no tiene cuenta, debes elegir una."
                 >
                   {(id) => (
-                    <select
-                      id={id}
-                      className="select"
-                      value={chargeAccount}
-                      onChange={(event) => setChargeAccount(event.target.value)}
-                    >
-                      <option value="">Sin especificar</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} · {account.currencyCode}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        id={id}
+                        className="select"
+                        value={chargeAccount}
+                        onChange={(event) => setChargeAccount(event.target.value)}
+                      >
+                        <option value="">Sin especificar</option>
+                        {currencyAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} · {account.currencyCode}
+                          </option>
+                        ))}
+                      </select>
+                      {currencyAccounts.length === 0 ? (
+                        <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                          No tienes cuentas en {currency}. Necesitas una cuenta en{' '}
+                          {currency} para registrar el cobro.
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </Field>
               </div>
@@ -1053,6 +1091,23 @@ function SubscriptionFormModal({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  // Las cuentas sólo pueden ser de la misma moneda que la suscripción.
+  const currencyAccounts = accounts.filter(
+    (account) => account.currencyCode === form.currency,
+  );
+
+  const handleCurrencyChange = (next: string) => {
+    setForm((current) => ({
+      ...current,
+      currency: next,
+      accountId: accounts.some(
+        (account) => account.id === current.accountId && account.currencyCode === next,
+      )
+        ? current.accountId
+        : '',
+    }));
+  };
+
   const handleSave = async () => {
     if (!form.name.trim()) {
       setError('Escribe el nombre del servicio.');
@@ -1084,6 +1139,8 @@ function SubscriptionFormModal({
       nextChargeDate: form.nextChargeDate || null,
       accountId: form.accountId || null,
       paymentMethod: form.paymentMethod || null,
+      // Sin esto, cada edición borraría el responsable asignado.
+      responsibleContactId: subscription?.responsibleContactId ?? null,
       status: subscription?.status ?? 'active',
       notes: form.notes.trim() || null,
     };
@@ -1206,7 +1263,7 @@ function SubscriptionFormModal({
                 id={id}
                 className="select"
                 value={form.currency}
-                onChange={(event) => update('currency', event.target.value)}
+                onChange={(event) => handleCurrencyChange(event.target.value)}
               >
                 {currencyOptions.map((currency) => (
                   <option key={currency.code} value={currency.code}>
@@ -1261,9 +1318,10 @@ function SubscriptionFormModal({
                   className="input"
                   type="number"
                   min={1}
+                  step={1}
                   value={form.frequencyDays}
                   onChange={(event) =>
-                    update('frequencyDays', Math.max(0, Number(event.target.value) || 0))
+                    update('frequencyDays', Math.max(1, Math.round(Number(event.target.value) || 1)))
                   }
                 />
               )}
@@ -1299,19 +1357,28 @@ function SubscriptionFormModal({
 
           <Field label="Cuenta">
             {(id) => (
-              <select
-                id={id}
-                className="select"
-                value={form.accountId}
-                onChange={(event) => update('accountId', event.target.value)}
-              >
-                <option value="">Sin especificar</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} · {account.currencyCode}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  id={id}
+                  className="select"
+                  value={form.accountId}
+                  onChange={(event) => update('accountId', event.target.value)}
+                >
+                  <option value="">Sin especificar</option>
+                  {currencyAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {account.currencyCode}
+                    </option>
+                  ))}
+                </select>
+                {currencyAccounts.length === 0 ? (
+                  <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                    No tienes cuentas en {form.currency}. Puedes guardar la
+                    suscripción igual, pero no podrás registrar cobros hasta crear
+                    una cuenta en {form.currency}.
+                  </p>
+                ) : null}
+              </>
             )}
           </Field>
 

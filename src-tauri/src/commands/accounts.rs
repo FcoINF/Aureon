@@ -7,11 +7,17 @@ use crate::core::repos;
 use crate::core::services::{accounts, categories};
 use crate::state::AppState;
 
+/// Monedas disponibles. Si todavía no hay base de datos (instalación nueva),
+/// se responde con el catálogo de referencia para que los ajustes y los
+/// formularios siempre tengan las monedas disponibles.
 #[tauri::command]
 pub fn list_currencies(state: State<'_, AppState>) -> Result<Vec<crate::core::models::Currency>, String> {
-    state
-        .read_or(|conn| repos::list_currencies(conn))
-        .map_err(|e| e.to_string())
+    let from_db = state.read_or(repos::list_currencies).unwrap_or_default();
+    if from_db.is_empty() {
+        Ok(crate::core::catalog::monedas())
+    } else {
+        Ok(from_db)
+    }
 }
 
 #[tauri::command]
@@ -63,27 +69,35 @@ pub fn delete_account(state: State<'_, AppState>, id: String) -> Result<(), Stri
         .map_err(|e| e.to_string())
 }
 
+/// Categorías disponibles. Sin base de datos se responde con el catálogo de
+/// referencia, de modo que los formularios de movimiento y la pantalla de
+/// Configuración tengan las categorías por defecto desde el primer arranque.
 #[tauri::command]
 pub fn list_categories(
     state: State<'_, AppState>,
     kind: Option<String>,
     include_archived: Option<bool>,
     period: Option<String>,
+    currency: Option<String>,
 ) -> Result<Vec<crate::core::models::Category>, String> {
     let (start, end) = match period {
         Some(p) => crate::core::dates::period_range(&p, 0).map_err(|e| e.to_string())?,
         None => crate::core::dates::period_range("month", 0).map_err(|e| e.to_string())?,
     };
-    state
-        .read_or(|conn| {
-            categories::list_categories(
-                conn,
-                kind.as_deref(),
-                include_archived.unwrap_or(false),
-                (&start, &end),
-            )
-        })
-        .map_err(|e| e.to_string())
+    let resultado = state.read(|conn| {
+        categories::list_categories(
+            conn,
+            kind.as_deref(),
+            include_archived.unwrap_or(false),
+            (&start, &end),
+            currency.as_deref(),
+        )
+    });
+    match resultado {
+        Ok(Some(lista)) => Ok(lista),
+        Ok(None) => Ok(crate::core::catalog::categorias(kind.as_deref())),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[tauri::command]

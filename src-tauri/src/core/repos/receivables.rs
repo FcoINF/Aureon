@@ -169,6 +169,7 @@ pub fn list_payments(conn: &Connection, receivable_id: &str) -> AppResult<Vec<Re
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from_sqlite)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn insert_payment(
     conn: &Connection,
     id: &str,

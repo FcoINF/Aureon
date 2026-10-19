@@ -5,7 +5,7 @@
 //! * Registrar un cobro real genera un único movimiento de gasto.
 //! * Pausar, cancelar o cambiar el precio nunca borra el historial de cobros.
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::core::dates::{self, Frequency};
 use crate::core::error::{AppError, AppResult};
@@ -285,18 +285,30 @@ pub fn add_share(
     repos::subscriptions::get(conn, subscription_id)?;
     let contact_id = services::ensure_contact(conn, Some(&input.contact_id))?
         .ok_or_else(|| AppError::validation("Indica con quién se comparte la suscripción."))?;
-    match input.share_type.as_str() {
-        "percent" => {
-            if input.share_value <= 0 || input.share_value > 100 {
-                return Err(AppError::validation(
-                    "El porcentaje debe estar entre 1 y 100.",
-                ));
-            }
+    if input.share_type.as_str() == "percent" {
+        if input.share_value <= 0 || input.share_value > 100 {
+            return Err(AppError::validation(
+                "El porcentaje debe estar entre 1 y 100.",
+            ));
         }
-        "amount" => {
-            services::positive(input.share_value)?;
-        }
-        _ => return Err(AppError::validation("Indica si se comparte por porcentaje o por monto.")),
+    } else if input.share_type.as_str() == "amount" {
+        services::positive(input.share_value)?;
+    } else {
+        return Err(AppError::validation("Indica si se comparte por porcentaje o por monto."));
+    }
+
+    // Una persona no puede participar dos veces de la misma suscripción.
+    let ya_participa: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM subscription_shares WHERE subscription_id = ?1 AND contact_id = ?2",
+            params![subscription_id, contact_id],
+            |row| row.get(0),
+        )
+        .map_err(AppError::from_sqlite)?;
+    if ya_participa > 0 {
+        return Err(AppError::conflict(
+            "Esa persona ya participa en esta suscripción.",
+        ));
     }
     let receivable_id = input
         .receivable_id

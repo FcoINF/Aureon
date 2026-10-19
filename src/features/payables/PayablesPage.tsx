@@ -25,6 +25,7 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'partial', label: 'Parciales' },
   { value: 'paid', label: 'Pagadas' },
   { value: 'overdue', label: 'Vencidas' },
+  { value: 'cancelled', label: 'Canceladas' },
 ];
 
 const STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
@@ -48,6 +49,18 @@ function statusBadgeClass(status: string): string {
     default:
       return 'badge';
   }
+}
+
+/**
+ * Aviso mostrado cuando no existe ninguna cuenta en la moneda del registro:
+ * el backend rechaza mover dinero entre cuentas de distinta moneda.
+ */
+function NoAccountsNotice({ id, currency }: { id: string; currency: string }) {
+  return (
+    <p id={id} className="field-hint">
+      No hay cuentas en {currency}. Crea una en Configuración → Cuentas.
+    </p>
+  );
 }
 
 /** Suma los saldos pendientes agrupados por moneda. */
@@ -109,6 +122,12 @@ function PayableForm({
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // La cuenta prevista debe tener la misma moneda que la obligación.
+  const currencyAccounts = useMemo(
+    () => accounts.filter((account) => account.currencyCode === form.currency),
+    [accounts, form.currency],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -225,7 +244,10 @@ function PayableForm({
                 id={id}
                 className="select"
                 value={form.currency}
-                onChange={(event) => update('currency', event.target.value)}
+                onChange={(event) => {
+                  update('currency', event.target.value);
+                  update('accountId', '');
+                }}
               >
                 {currencies.map((currency) => (
                   <option key={currency.code} value={currency.code}>
@@ -261,21 +283,25 @@ function PayableForm({
           </Field>
 
           <Field label="Cuenta prevista" hint="De dónde saldrá el dinero al pagar">
-            {(id) => (
-              <select
-                id={id}
-                className="select"
-                value={form.accountId}
-                onChange={(event) => update('accountId', event.target.value)}
-              >
-                <option value="">Sin definir</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} · {account.currencyCode}
-                  </option>
-                ))}
-              </select>
-            )}
+            {(id) =>
+              currencyAccounts.length === 0 ? (
+                <NoAccountsNotice id={id} currency={form.currency} />
+              ) : (
+                <select
+                  id={id}
+                  className="select"
+                  value={form.accountId}
+                  onChange={(event) => update('accountId', event.target.value)}
+                >
+                  <option value="">Sin definir</option>
+                  {currencyAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {account.currencyCode}
+                    </option>
+                  ))}
+                </select>
+              )
+            }
           </Field>
         </div>
       </div>
@@ -355,13 +381,23 @@ function PayModal({ payable, accounts, onClose, onSaved }: PayModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const currency = payable?.currencyCode ?? '';
+  // El backend sólo admite cuentas de la misma moneda del pago.
+  const currencyAccounts = useMemo(
+    () => accounts.filter((account) => account.currencyCode === currency),
+    [accounts, currency],
+  );
+
   useEffect(() => {
     if (!payable) return;
     setAmount(payable.pendingAmount);
     setDate(todayIso());
-    setAccountId(payable.accountId ?? '');
+    const planned = accounts.find(
+      (account) => account.id === payable.accountId && account.currencyCode === payable.currencyCode,
+    );
+    setAccountId(planned ? planned.id : '');
     setError(null);
-  }, [payable]);
+  }, [payable, accounts]);
 
   const handleSave = async () => {
     if (!payable) return;
@@ -371,6 +407,10 @@ function PayModal({ payable, accounts, onClose, onSaved }: PayModalProps) {
     }
     if (amount > payable.pendingAmount) {
       setError('El pago supera el saldo pendiente.');
+      return;
+    }
+    if (currencyAccounts.length === 0) {
+      setError(`No hay cuentas en ${currency}. Crea una en Configuración → Cuentas.`);
       return;
     }
     if (!accountId) {
@@ -461,21 +501,25 @@ function PayModal({ payable, accounts, onClose, onSaved }: PayModalProps) {
         </Field>
 
         <Field label="Cuenta desde donde se paga" required className="span-2">
-          {(id) => (
-            <select
-              id={id}
-              className="select"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-            >
-              <option value="">Selecciona una cuenta</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {account.currencyCode}
-                </option>
-              ))}
-            </select>
-          )}
+          {(id) =>
+            currencyAccounts.length === 0 ? (
+              <NoAccountsNotice id={id} currency={currency} />
+            ) : (
+              <select
+                id={id}
+                className="select"
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+              >
+                <option value="">Selecciona una cuenta</option>
+                {currencyAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} · {account.currencyCode}
+                  </option>
+                ))}
+              </select>
+            )
+          }
         </Field>
       </div>
     </Modal>
@@ -681,9 +725,16 @@ export function PayablesPage() {
   const overdueCount = (all.data ?? []).filter((item) => item.status === 'overdue').length;
 
   const reloadAll = () => {
-    list.reload();
-    all.reload();
-    void refresh();
+    void (async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      list.reload();
+      all.reload();
+      void refresh();
+    })();
   };
 
   const handleDelete = async () => {
@@ -848,7 +899,18 @@ export function PayablesPage() {
                         </td>
                         <td className="num">
                           <Money value={item.pendingAmount} currency={item.currencyCode} />
-                          <div className="progress" style={{ marginTop: 4 }}>
+                          <div
+                            className="progress"
+                            style={{ marginTop: 4 }}
+                            role="progressbar"
+                            aria-valuenow={progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Pagado: ${progress}% de ${formatCurrency(
+                              item.totalAmount,
+                              item.currencyCode,
+                            )}`}
+                          >
                             <div
                               className={`progress-bar${
                                 item.status === 'overdue' ? ' is-over' : ''
@@ -942,7 +1004,7 @@ export function PayablesPage() {
         title="Eliminar cuenta por pagar"
         message={
           deleting
-            ? `Se eliminará «${deleting.title}» y su historial de pagos. Esta acción no se puede deshacer.`
+            ? `Se eliminará «${deleting.title}» y su historial de pagos. El dinero ya pagado no se revierte: permanece descontado de la cuenta desde donde salió y en Movimientos. Esta acción no se puede deshacer.`
             : ''
         }
         confirmLabel="Eliminar"

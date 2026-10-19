@@ -164,7 +164,7 @@ fn order_clause(filter: &TransactionFilter) -> String {
 pub fn list(conn: &Connection, filter: &TransactionFilter) -> AppResult<Vec<Transaction>> {
     let (where_clause, args) = build_where(filter);
     let mut sql = format!("{SELECT_TRANSACTION}{where_clause}{}", order_clause(filter));
-    let limit = filter.limit.unwrap_or(500).clamp(1, 5000);
+    let limit = filter.limit.unwrap_or(500).clamp(1, 1_000_000);
     let offset = filter.offset.unwrap_or(0).max(0);
     sql.push_str(" LIMIT ? OFFSET ?");
     let mut all_args = args;

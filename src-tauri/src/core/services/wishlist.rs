@@ -132,7 +132,7 @@ pub fn update(conn: &Connection, id: &str, input: &WishlistInput, default_curren
             status: Some(status),
             notes: services::optional_text(input.notes.clone()),
         },
-        &default_currency,
+        default_currency,
     )?;
     repos::wishlist::get(conn, id)
 }

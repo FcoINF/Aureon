@@ -2,6 +2,12 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import { Icon } from './Icons';
 
+/**
+ * Pila de diálogos abiertos. Sólo el diálogo superior reacciona a la tecla
+ * Escape: así, un diálogo de confirmación sobre un detalle no cierra ambos.
+ */
+const pilaDialogos: symbol[] = [];
+
 interface ModalProps {
   open: boolean;
   title: string;
@@ -26,8 +32,14 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return undefined;
+    const token = Symbol('dialogo');
+    pilaDialogos.push(token);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      // Sólo responde el diálogo que está encima.
+      if (pilaDialogos[pilaDialogos.length - 1] !== token) return;
+      event.stopPropagation();
+      onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     const timer = window.setTimeout(() => {
@@ -39,6 +51,8 @@ export function Modal({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       window.clearTimeout(timer);
+      const posicion = pilaDialogos.indexOf(token);
+      if (posicion >= 0) pilaDialogos.splice(posicion, 1);
     };
   }, [open, onClose]);
 

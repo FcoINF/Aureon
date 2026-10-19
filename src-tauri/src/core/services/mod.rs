@@ -83,7 +83,7 @@ pub fn ensure_category(
         Some(v) if !v.trim().is_empty() => v.trim().to_string(),
         _ => return Ok(None),
     };
-    let category = repos::categories::get(conn, &id, ("0000-00-00", "9999-99-99"))?;
+    let category = repos::categories::get(conn, &id, ("0000-00-00", "9999-99-99"), None)?;
     if let Some(kind) = expected_kind {
         if category.kind != kind {
             return Err(AppError::validation(
@@ -102,6 +102,30 @@ pub fn ensure_contact(conn: &Connection, id: Option<&str>) -> AppResult<Option<S
     };
     repos::contacts::get(conn, &id)?;
     Ok(Some(id))
+}
+
+/// Devuelve la moneda de una cuenta.
+pub fn account_currency(conn: &Connection, id: &str) -> AppResult<String> {
+    Ok(repos::accounts::get(conn, id)?.currency_code)
+}
+
+/// Comprueba que la cuenta exista y que su moneda coincida con la del
+/// movimiento. Mezclar monedas en una misma cuenta corrompería el saldo.
+pub fn ensure_account_in_currency(
+    conn: &Connection,
+    id: Option<&str>,
+    currency: &str,
+) -> AppResult<Option<String>> {
+    let id = ensure_account(conn, id)?;
+    if let Some(account_id) = id.as_deref() {
+        let account_currency = account_currency(conn, account_id)?;
+        if account_currency != currency {
+            return Err(AppError::validation(
+                "La cuenta elegida está en otra moneda. Elige una cuenta de la misma moneda del movimiento.",
+            ));
+        }
+    }
+    Ok(id)
 }
 
 /// Comprueba que la moneda exista y devuelve su código normalizado.

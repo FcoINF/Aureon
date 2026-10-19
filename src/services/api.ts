@@ -64,11 +64,21 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 /** Convierte el error nativo en un mensaje comprensible. */
 export function readError(error: unknown): string {
-  if (typeof error === 'string') return error;
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error && typeof error === 'object' && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : 'Ocurrió un problema inesperado.';
+
+  // Los errores de deserialización de Tauri son técnicos: se traducen.
+  if (/invalid type|invalid value|expected/i.test(raw)) {
+    return 'Alguno de los valores enviados no tiene un formato válido. Revisa los campos marcados.';
   }
-  return 'Ocurrió un problema inesperado.';
+  if (/missing required/i.test(raw)) {
+    return 'Falta completar algún campo obligatorio.';
+  }
+  return raw;
 }
 
 export const api = {
@@ -84,8 +94,8 @@ export const api = {
   deleteAccount: (id: string) => call<void>('delete_account', { id }),
 
   // Categorías --------------------------------------------------------
-  listCategories: (kind?: string, includeArchived = false, period = 'month') =>
-    call<Category[]>('list_categories', { kind, includeArchived, period }),
+  listCategories: (kind?: string, includeArchived = false, period = 'month', currency?: string) =>
+    call<Category[]>('list_categories', { kind, includeArchived, period, currency }),
   createCategory: (input: CategoryInput) => call<Category>('create_category', { input }),
   updateCategory: (id: string, input: CategoryInput) =>
     call<Category>('update_category', { id, input }),
@@ -130,6 +140,8 @@ export const api = {
   // Presupuestos -------------------------------------------------------
   listBudgets: () => call<Budget[]>('list_budgets'),
   saveBudget: (input: BudgetInput) => call<Budget>('save_budget', { input }),
+  updateBudget: (id: string, input: BudgetInput) =>
+    call<Budget>('update_budget', { id, input }),
   deleteBudget: (id: string) => call<void>('delete_budget', { id }),
 
   // Suscripciones ------------------------------------------------------

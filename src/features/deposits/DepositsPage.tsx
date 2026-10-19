@@ -35,6 +35,18 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'cancelled', label: 'Cancelados' },
 ];
 
+/**
+ * Aviso mostrado cuando no existe ninguna cuenta en la moneda del depósito:
+ * el backend rechaza mover dinero entre cuentas de distinta moneda.
+ */
+function NoAccountsNotice({ id, currency }: { id: string; currency: string }) {
+  return (
+    <p id={id} className="field-hint">
+      No hay cuentas en {currency}. Crea una en Configuración → Cuentas.
+    </p>
+  );
+}
+
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'completed':
@@ -105,6 +117,12 @@ function DepositForm({
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // La cuenta de origen debe tener la misma moneda que el depósito.
+  const currencyAccounts = useMemo(
+    () => accounts.filter((account) => account.currencyCode === form.currency),
+    [accounts, form.currency],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -220,7 +238,10 @@ function DepositForm({
                 id={id}
                 className="select"
                 value={form.currency}
-                onChange={(event) => update('currency', event.target.value)}
+                onChange={(event) => {
+                  update('currency', event.target.value);
+                  update('accountId', '');
+                }}
               >
                 {currencies.map((currency) => (
                   <option key={currency.code} value={currency.code}>
@@ -256,21 +277,25 @@ function DepositForm({
           </Field>
 
           <Field label="Cuenta de origen" hint="De dónde saldrá el dinero">
-            {(id) => (
-              <select
-                id={id}
-                className="select"
-                value={form.accountId}
-                onChange={(event) => update('accountId', event.target.value)}
-              >
-                <option value="">Sin definir</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} · {account.currencyCode}
-                  </option>
-                ))}
-              </select>
-            )}
+            {(id) =>
+              currencyAccounts.length === 0 ? (
+                <NoAccountsNotice id={id} currency={form.currency} />
+              ) : (
+                <select
+                  id={id}
+                  className="select"
+                  value={form.accountId}
+                  onChange={(event) => update('accountId', event.target.value)}
+                >
+                  <option value="">Sin definir</option>
+                  {currencyAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {account.currencyCode}
+                    </option>
+                  ))}
+                </select>
+              )
+            }
           </Field>
 
           <Field label="Método de pago">
@@ -410,11 +435,21 @@ function CompleteModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const currency = deposit?.currencyCode ?? '';
+  // El backend exige que las cuentas tengan la misma moneda que el depósito.
+  const currencyAccounts = useMemo(
+    () => accounts.filter((account) => account.currencyCode === currency),
+    [accounts, currency],
+  );
+
   useEffect(() => {
     if (!deposit) return;
     setMode('none');
     setDate(todayIso());
-    setAccountId(deposit.accountId ?? '');
+    const origin = accounts.find(
+      (account) => account.id === deposit.accountId && account.currencyCode === deposit.currencyCode,
+    );
+    setAccountId(origin ? origin.id : '');
     setTransferAccountId('');
     setCategoryId('');
     setContactId(deposit.contactId ?? '');
@@ -422,15 +457,25 @@ function CompleteModal({
     setNotes('');
     setError(null);
     void api.listContacts().then(setContacts).catch(() => setContacts([]));
-  }, [deposit]);
+  }, [deposit, accounts]);
 
   const handleSave = async () => {
     if (!deposit) return;
-    if (mode !== 'none' && !accountId) {
-      setError('Indica la cuenta de origen del dinero.');
-      return;
+    if (mode !== 'none') {
+      if (currencyAccounts.length === 0) {
+        setError(`No hay cuentas en ${currency}. Crea una en Configuración → Cuentas.`);
+        return;
+      }
+      if (!accountId) {
+        setError('Indica la cuenta de origen del dinero.');
+        return;
+      }
     }
     if (mode === 'transfer') {
+      if (currencyAccounts.filter((account) => account.id !== accountId).length === 0) {
+        setError(`Necesitas otra cuenta en ${currency} para la transferencia.`);
+        return;
+      }
       if (!transferAccountId) {
         setError('Indica la cuenta de destino de la transferencia.');
         return;
@@ -453,7 +498,7 @@ function CompleteModal({
 
     const input: DepositCompleteInput = {
       completedAt: date,
-      accountId: accountId || null,
+      accountId: mode === 'none' ? null : accountId || null,
       registerTransaction: mode !== 'none',
       transactionType: mode === 'none' ? null : mode,
       transferAccountId: mode === 'transfer' ? transferAccountId : null,
@@ -544,7 +589,7 @@ function CompleteModal({
             : mode === 'transfer'
               ? 'Se registrará una transferencia entre tus cuentas: sale dinero de la cuenta de origen y entra en la de destino.'
               : 'Se registrará un gasto a nombre del destinatario, descontando el monto de la cuenta de origen.'}
-          {deposit?.contactId
+          {deposit?.contactId || deposit?.contactName
             ? ' Además, como el depósito tiene destinatario, Aureon registrará una cuenta por cobrar para que no pierdas el seguimiento de ese dinero.'
             : ''}
         </span>
@@ -566,46 +611,65 @@ function CompleteModal({
         <Field
           label="Cuenta de origen"
           required={mode !== 'none'}
-          hint={mode === 'none' ? 'Se usará la cuenta del depósito' : undefined}
+          hint={
+            mode === 'none'
+              ? 'No se usa en este modo: el depósito se marca como completado sin registrar movimientos.'
+              : undefined
+          }
         >
-          {(id) => (
-            <select
-              id={id}
-              className="select"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-            >
-              <option value="">
-                {mode === 'none' ? 'La del depósito' : 'Selecciona una cuenta'}
-              </option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {account.currencyCode}
+          {(id) =>
+            currencyAccounts.length === 0 ? (
+              <NoAccountsNotice id={id} currency={currency} />
+            ) : (
+              <select
+                id={id}
+                className="select"
+                value={accountId}
+                disabled={mode === 'none'}
+                onChange={(event) => {
+                  setAccountId(event.target.value);
+                  if (event.target.value === transferAccountId) setTransferAccountId('');
+                }}
+              >
+                <option value="">
+                  {mode === 'none' ? 'La del depósito' : 'Selecciona una cuenta'}
                 </option>
-              ))}
-            </select>
-          )}
+                {currencyAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} · {account.currencyCode}
+                  </option>
+                ))}
+              </select>
+            )
+          }
         </Field>
 
         {mode === 'transfer' ? (
           <Field label="Cuenta de destino" required className="span-2">
-            {(id) => (
-              <select
-                id={id}
-                className="select"
-                value={transferAccountId}
-                onChange={(event) => setTransferAccountId(event.target.value)}
-              >
-                <option value="">Selecciona una cuenta</option>
-                {accounts
-                  .filter((account) => account.id !== accountId)
-                  .map((account) => (
+            {(id) => {
+              const destinations = currencyAccounts.filter(
+                (account) => account.id !== accountId,
+              );
+              return destinations.length === 0 ? (
+                <p id={id} className="field-hint">
+                  No hay otra cuenta en {currency} para recibir la transferencia.
+                </p>
+              ) : (
+                <select
+                  id={id}
+                  className="select"
+                  value={transferAccountId}
+                  onChange={(event) => setTransferAccountId(event.target.value)}
+                >
+                  <option value="">Selecciona una cuenta</option>
+                  {destinations.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name} · {account.currencyCode}
                     </option>
                   ))}
-              </select>
-            )}
+                </select>
+              );
+            }}
           </Field>
         ) : null}
 
@@ -727,16 +791,20 @@ export function DepositsPage() {
 
   const items = all.data ?? [];
   const pendingCount = items.filter(
-    (item) => item.status === 'pending' || item.status === 'scheduled',
+    (item) =>
+      item.status === 'pending' || item.status === 'scheduled' || item.status === 'overdue',
   ).length;
   const overdueCount = items.filter((item) => item.status === 'overdue').length;
   const completedCount = items.filter((item) => item.status === 'completed').length;
   const cancelledCount = items.filter((item) => item.status === 'cancelled').length;
 
+  // Un depósito vencido sigue sin realizarse: también forma parte del total.
   const pendingTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const item of items) {
-      if (item.status !== 'pending' && item.status !== 'scheduled') continue;
+      if (item.status !== 'pending' && item.status !== 'scheduled' && item.status !== 'overdue') {
+        continue;
+      }
       totals[item.currencyCode] = (totals[item.currencyCode] ?? 0) + item.amount;
     }
     return totals;
@@ -747,9 +815,16 @@ export function DepositsPage() {
   const otherTotals = Object.entries(pendingTotals).filter(([code]) => code !== mainCurrency);
 
   const reloadAll = () => {
-    list.reload();
-    all.reload();
-    void refresh();
+    void (async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      list.reload();
+      all.reload();
+      void refresh();
+    })();
   };
 
   const handleCancel = async () => {
@@ -805,7 +880,7 @@ export function DepositsPage() {
         <Stat
           label="Depósitos pendientes"
           value={String(pendingCount)}
-          meta="Sin realizar y programados"
+          meta="Sin realizar, programados y vencidos"
           tone="accent"
         />
         <Stat
@@ -829,7 +904,7 @@ export function DepositsPage() {
               ? `Además ${otherTotals
                   .map(([code, value]) => `${formatCurrency(value, code)} en ${code}`)
                   .join(' · ')}`
-              : 'Suma de los depósitos aún no realizados'
+              : 'Suma de los depósitos aún no realizados, incluidos los vencidos'
           }
         />
       </div>
@@ -838,7 +913,9 @@ export function DepositsPage() {
         <Icon name="info" size={15} />
         <span>
           Crear un depósito no altera tus saldos. El dinero sólo se mueve cuando completas
-          el depósito y eliges registrar el movimiento real.
+          el depósito y eliges registrar el movimiento real. Si el depósito tiene destinatario,
+          al completarlo Aureon crea además una cuenta por cobrar de seguimiento por el mismo
+          importe, para que no pierdas el rastro de ese dinero.
         </span>
       </div>
 
@@ -926,30 +1003,41 @@ export function DepositsPage() {
                         <span className={statusBadgeClass(item.status)}>
                           {statusLabel(item.status)}
                         </span>
+                        {item.receivableId ? (
+                          <span
+                            className="badge badge-info"
+                            style={{ marginLeft: 'var(--space-2)' }}
+                            title="Tiene una cuenta por cobrar de seguimiento"
+                          >
+                            Seguimiento
+                          </span>
+                        ) : null}
                       </td>
                       <td>
                         <div className="table-actions">
+                          {item.status === 'pending' ||
+                          item.status === 'scheduled' ||
+                          item.status === 'cancelled' ? (
+                            <button
+                              type="button"
+                              className="btn btn-icon"
+                              title="Completar depósito"
+                              aria-label={`Completar ${item.title}`}
+                              onClick={() => setCompleting(item)}
+                            >
+                              <Icon name="check" size={14} />
+                            </button>
+                          ) : null}
                           {item.status === 'pending' || item.status === 'scheduled' ? (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-icon"
-                                title="Completar depósito"
-                                aria-label={`Completar ${item.title}`}
-                                onClick={() => setCompleting(item)}
-                              >
-                                <Icon name="check" size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-icon"
-                                title="Cancelar depósito"
-                                aria-label={`Cancelar ${item.title}`}
-                                onClick={() => setCancelling(item)}
-                              >
-                                <Icon name="close" size={14} />
-                              </button>
-                            </>
+                            <button
+                              type="button"
+                              className="btn btn-icon"
+                              title="Cancelar depósito"
+                              aria-label={`Cancelar ${item.title}`}
+                              onClick={() => setCancelling(item)}
+                            >
+                              <Icon name="close" size={14} />
+                            </button>
                           ) : null}
                           <button
                             type="button"
@@ -994,7 +1082,7 @@ export function DepositsPage() {
         title="Cancelar depósito"
         message={
           cancelling
-            ? `El depósito «${cancelling.title}» quedará marcado como cancelado y sin realizar. Puedes completarlo más tarde si el envío se realiza.`
+            ? `El depósito «${cancelling.title}» quedará marcado como cancelado y sin realizar. Si el envío se realiza, puedes completarlo más tarde con el botón «Completar».`
             : ''
         }
         confirmLabel="Cancelar depósito"

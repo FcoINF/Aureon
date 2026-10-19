@@ -113,6 +113,17 @@ pub fn save_budget(state: State<'_, AppState>, input: BudgetInput) -> Result<Bud
 }
 
 #[tauri::command]
+pub fn update_budget(
+    state: State<'_, AppState>,
+    id: String,
+    input: BudgetInput,
+) -> Result<Budget, String> {
+    state
+        .write(|conn| budgets::update(conn, &id, &input))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn delete_budget(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state
         .write(|conn| budgets::delete(conn, &id))

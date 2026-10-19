@@ -228,7 +228,7 @@ export function TransactionForm({
             )}
           </Field>
 
-          <Field label="Monto" required>
+          <Field label="Monto" required hint={`Moneda: ${form.currency}`}>
             {(id) => (
               <AmountInput
                 id={id}
@@ -303,13 +303,20 @@ export function TransactionForm({
           <Field
             label={form.transactionType === 'income' ? 'Cuenta receptora' : 'Cuenta de origen'}
             required
+            hint="La moneda del movimiento es la de la cuenta."
           >
             {(id) => (
               <select
                 id={id}
                 className="select"
                 value={form.accountId}
-                onChange={(event) => update('accountId', event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  update('accountId', value);
+                  // El movimiento hereda la moneda de la cuenta elegida.
+                  const account = accounts.find((item) => item.id === value);
+                  if (account) update('currency', account.currencyCode);
+                }}
               >
                 <option value="">Selecciona una cuenta</option>
                 {accounts.map((account) => (
@@ -322,7 +329,7 @@ export function TransactionForm({
           </Field>
 
           {form.transactionType === 'transfer' ? (
-            <Field label="Cuenta de destino" required>
+            <Field label="Cuenta de destino" required hint="Debe ser de la misma moneda.">
               {(id) => (
                 <select
                   id={id}
@@ -332,7 +339,11 @@ export function TransactionForm({
                 >
                   <option value="">Selecciona una cuenta</option>
                   {accounts
-                    .filter((account) => account.id !== form.accountId)
+                    .filter(
+                      (account) =>
+                        account.id !== form.accountId &&
+                        account.currencyCode === form.currency,
+                    )
                     .map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name} · {account.currencyCode}

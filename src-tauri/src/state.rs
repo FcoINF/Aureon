@@ -41,6 +41,17 @@ impl AppState {
         if !path.exists() {
             return Ok(false);
         }
+        // Un archivo de 0 bytes no contiene información: se aparta (no se
+        // borra) y la aplicación empieza de cero sin dejar un rastro roto.
+        if db::is_empty_file(&path) {
+            let apartado = path.with_extension(format!(
+                "vacio-{}.db",
+                crate::core::dates::now_str().replace([':', ' ', 'T'], "-")
+            ));
+            let _ = std::fs::rename(&path, &apartado);
+            eprintln!("[aureon] la base de datos estaba vacía; se apartado en {apartado:?}");
+            return Ok(false);
+        }
         if !db::is_readable_database(&path) {
             return Err(AppError::Database(
                 "La base de datos está dañada. Restaura una copia de seguridad para continuar.".to_string(),
@@ -84,6 +95,7 @@ impl AppState {
     pub fn write<T>(&self, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
         let mut guard = self.lock()?;
         if guard.conn.is_none() {
+            eprintln!("[aureon] se crea la base de datos en {:?}", self.db_path());
             let conn = db::create_new(&self.db_path())?;
             guard.conn = Some(conn);
         }

@@ -13,7 +13,7 @@ import { ConfirmDialog, Modal } from '../../components/Modal';
 import { EmptyState, Field, PageHeader, Stat } from '../../components/Primitives';
 import { useToast } from '../../components/Toast';
 import { useAsync } from '../../hooks/useAsync';
-import { api } from '../../services/api';
+import { api, readError } from '../../services/api';
 import { useAppData } from '../../services/store';
 import type { Account, AccountInput, AccountType, Currency } from '../../types';
 import {
@@ -69,6 +69,9 @@ function AccountForm({ open, account, onClose, onSaved }: AccountFormProps) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMovements, setHasMovements] = useState(false);
+  const [checkingMovements, setCheckingMovements] = useState(false);
+  const [movementsError, setMovementsError] = useState<string | null>(null);
 
   const currencyOptions = useMemo<Currency[]>(
     () =>
@@ -86,20 +89,53 @@ function AccountForm({ open, account, onClose, onSaved }: AccountFormProps) {
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     setError(null);
-    if (account) {
-      setForm({
-        name: account.name,
-        accountType: account.accountType,
-        currencyCode: account.currencyCode,
-        initialBalance: account.initialBalance,
-        initialBalanceDate: account.initialBalanceDate,
-        description: account.description ?? '',
-      });
-    } else {
+    setHasMovements(false);
+    setCheckingMovements(false);
+    setMovementsError(null);
+
+    if (!account) {
       setForm(emptyAccountForm(settings.defaultCurrency));
+      return undefined;
     }
+
+    setForm({
+      name: account.name,
+      accountType: account.accountType,
+      currencyCode: account.currencyCode,
+      initialBalance: account.initialBalance,
+      initialBalanceDate: account.initialBalanceDate,
+      description: account.description ?? '',
+    });
+
+    // La moneda de una cuenta con movimientos ya registrados no se puede
+    // cambiar: se consulta al backend para saberlo con certeza.
+    let cancelled = false;
+    setCheckingMovements(true);
+    void (async () => {
+      try {
+        const movimientos = await api.listTransactions({
+          accountIds: [account.id],
+          includeVoided: true,
+          limit: 1,
+        });
+        if (cancelled) return;
+        const tieneMovimientos = movimientos.length > 0;
+        setHasMovements(tieneMovimientos);
+        if (tieneMovimientos) {
+          setForm((current) => ({ ...current, currencyCode: account.currencyCode }));
+        }
+      } catch (err) {
+        if (!cancelled) setMovementsError(readError(err));
+      } finally {
+        if (!cancelled) setCheckingMovements(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, account, settings.defaultCurrency]);
 
   const update = <K extends keyof AccountFormState>(
@@ -147,8 +183,7 @@ function AccountForm({ open, account, onClose, onSaved }: AccountFormProps) {
       onSaved();
       onClose();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'No se pudo guardar la cuenta.';
+      const message = readError(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -218,12 +253,24 @@ function AccountForm({ open, account, onClose, onSaved }: AccountFormProps) {
             )}
           </Field>
 
-          <Field label="Moneda" required>
+          <Field
+            label="Moneda"
+            required
+            error={movementsError ?? undefined}
+            hint={
+              hasMovements
+                ? 'No se puede cambiar la moneda de una cuenta con movimientos.'
+                : checkingMovements
+                  ? 'Comprobando si la cuenta ya tiene movimientos…'
+                  : undefined
+            }
+          >
             {(id) => (
               <select
                 id={id}
                 className="select"
                 value={form.currencyCode}
+                disabled={account !== null && (checkingMovements || hasMovements)}
                 onChange={(event) => update('currencyCode', event.target.value)}
               >
                 {currencyOptions.map((currency) => (
@@ -281,7 +328,7 @@ function AccountForm({ open, account, onClose, onSaved }: AccountFormProps) {
 }
 
 export function AccountsPage() {
-  const { accounts, refresh } = useAppData();
+  const { refresh } = useAppData();
   const toast = useToast();
 
   const [showArchived, setShowArchived] = useState(false);
@@ -291,16 +338,23 @@ export function AccountsPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const list = useAsync(() => api.listAccounts(showArchived), [showArchived]);
-  const every = useAsync(() => api.listAccounts(true), []);
+  // Una sola consulta trae todas las cuentas: de ella se derivan las activas.
+  const all = useAsync(() => api.listAccounts(true), []);
+  const allAccounts = all.data;
 
-  const visible = list.data ?? [];
-  const activeCount = visible.filter((account) => !account.archived).length;
-  const archivedCount = visible.length - activeCount;
+  const visible = useMemo(
+    () =>
+      showArchived
+        ? (allAccounts ?? [])
+        : (allAccounts ?? []).filter((account) => !account.archived),
+    [allAccounts, showArchived],
+  );
+  const activeCount = (allAccounts ?? []).filter((account) => !account.archived).length;
+  const archivedCount = (allAccounts ?? []).length - activeCount;
 
   const totals = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
-    for (const account of list.data ?? []) {
+    for (const account of allAccounts ?? []) {
       if (account.archived) continue;
       const current = map.get(account.currencyCode) ?? { total: 0, count: 0 };
       current.total += account.balance;
@@ -308,10 +362,11 @@ export function AccountsPage() {
       map.set(account.currencyCode, current);
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [list.data]);
+  }, [allAccounts]);
 
-  const isFirstRun =
-    accounts.length === 0 && (every.data ?? []).length === 0 && !every.loading;
+  // Primera ejecución: la consulta terminó y no hay ninguna cuenta, ni
+  // siquiera archivada.
+  const isFirstRun = all.data !== null && all.data.length === 0;
 
   const openCreate = () => {
     setEditing(null);
@@ -324,8 +379,7 @@ export function AccountsPage() {
   };
 
   const reload = () => {
-    list.reload();
-    every.reload();
+    all.reload();
   };
 
   const handleToggleArchived = async (account: Account) => {
@@ -336,10 +390,7 @@ export function AccountsPage() {
       reload();
       await refresh();
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'No se pudo cambiar el estado de la cuenta.';
+      const message = readError(err);
       setActionError(message);
       toast.error(message);
     }
@@ -356,8 +407,7 @@ export function AccountsPage() {
       reload();
       await refresh();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'No se pudo eliminar la cuenta.';
+      const message = readError(err);
       setActionError(message);
       toast.error(message);
     } finally {
@@ -425,12 +475,12 @@ export function AccountsPage() {
         </div>
 
         <div className="card-body">
-          {list.loading ? (
+          {all.loading ? (
             <div className="loading">
               <span className="spinner" />
             </div>
-          ) : list.error ? (
-            <div className="alert alert-error">{list.error}</div>
+          ) : all.error ? (
+            <div className="alert alert-error">{all.error}</div>
           ) : visible.length === 0 ? (
             isFirstRun ? (
               <EmptyState

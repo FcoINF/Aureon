@@ -169,6 +169,14 @@ pub fn receive(
     let new_received = receivable.received_amount + amount;
     let status = if new_received >= receivable.total_amount {
         "paid"
+    } else if receivable
+        .due_date
+        .as_deref()
+        .map(|d| d < dates::today_str().as_str())
+        .unwrap_or(false)
+    {
+        // Un cobro parcial no saca la deuda de la categoría «vencida».
+        "overdue"
     } else {
         "partial"
     };
@@ -182,6 +190,14 @@ pub fn set_status(conn: &Connection, id: &str, status: &str) -> AppResult<Receiv
     let valid = ["pending", "partial", "paid", "cancelled", "overdue"];
     if !valid.contains(&status) {
         return Err(AppError::validation("El estado indicado no es válido."));
+    }
+    let current = repos::receivables::get(conn, id)?;
+    if status == "paid" && current.total_amount - current.received_amount > 0 {
+        // Marcar «pagado» sin registrar el cobro dejaría la fila incoherente
+        // (saldo pendiente por encima de cero con estado pagado).
+        return Err(AppError::validation(
+            "Para marcar como pagado registra el cobro: así el saldo pendiente queda en cero.",
+        ));
     }
     repos::receivables::set_status(conn, id, status)?;
     repos::receivables::get(conn, id)

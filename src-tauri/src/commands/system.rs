@@ -18,7 +18,7 @@ use crate::state::AppState;
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<settings::AppSettings, String> {
     state
-        .read_or(|conn| settings::load(conn))
+        .read_or(settings::load)
         .map_err(|e| e.to_string())
 }
 
@@ -40,7 +40,7 @@ pub fn save_settings(
 pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     let db_path = state.db_path();
     let schema_version = state
-        .read(|conn| crate::core::migrations::current_version(conn))
+        .read(crate::core::migrations::current_version)
         .ok()
         .flatten()
         .unwrap_or(0);
@@ -291,14 +291,21 @@ fn open_path(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Ruta sugerida para guardar una copia de seguridad.
+/// Ruta sugerida para guardar una copia de seguridad. Respeta la carpeta
+/// configurada por el usuario en los ajustes.
 #[tauri::command]
 pub fn default_backup_path(state: State<'_, AppState>) -> String {
-    state
-        .data_dir()
-        .join(format!("aureon-copia-{}.db", dates::today_str()))
-        .to_string_lossy()
-        .to_string()
+    let nombre = format!("aureon-copia-{}.db", dates::today_str());
+    let carpeta = state
+        .read(crate::core::services::settings::load)
+        .ok()
+        .flatten()
+        .and_then(|settings| settings.backup_folder)
+        .filter(|value| !value.trim().is_empty());
+    match carpeta {
+        Some(carpeta) => PathBuf::from(carpeta).join(nombre).to_string_lossy().to_string(),
+        None => state.data_dir().join(nombre).to_string_lossy().to_string(),
+    }
 }
 
 /// Datos de la aplicación para la sección de información.

@@ -19,12 +19,14 @@ fn map_category(row: &Row<'_>) -> rusqlite::Result<Category> {
     })
 }
 
-/// `?1` es el identificador; `?2` y `?3` delimitan el período de gasto.
+/// `?1` es el identificador; `?2` y `?3` delimitan el período de gasto y
+/// `?4` la moneda (si se indica, sólo se cuenta lo de esa moneda).
 const SELECT_CATEGORY: &str = "
     SELECT c.id, c.name, c.kind, c.color, c.archived, c.created_at,
         (SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
             WHERE t.category_id = c.id AND t.voided = 0 AND t.type = 'expense'
-              AND t.date >= ?2 AND t.date <= ?3) AS spent,
+              AND t.date >= ?2 AND t.date <= ?3
+              AND (?4 IS NULL OR t.currency_code = ?4)) AS spent,
         (SELECT b.amount FROM budgets b WHERE b.category_id = c.id LIMIT 1) AS budget
     FROM categories c";
 
@@ -33,15 +35,17 @@ pub fn list(
     kind: Option<&str>,
     include_archived: bool,
     period: (&str, &str),
+    currency: Option<&str>,
 ) -> AppResult<Vec<Category>> {
     let mut sql = format!("{SELECT_CATEGORY} WHERE 1 = 1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![
         Box::new(String::new()),
         Box::new(period.0.to_string()),
         Box::new(period.1.to_string()),
+        Box::new(currency.map(|c| c.to_string())),
     ];
     if let Some(k) = kind {
-        sql.push_str(" AND c.kind = ?4");
+        sql.push_str(" AND c.kind = ?5");
         args.push(Box::new(k.to_string()));
     }
     if !include_archived {
@@ -53,11 +57,16 @@ pub fn list(
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from_sqlite)
 }
 
-pub fn get(conn: &Connection, id: &str, period: (&str, &str)) -> AppResult<Category> {
+pub fn get(
+    conn: &Connection,
+    id: &str,
+    period: (&str, &str),
+    currency: Option<&str>,
+) -> AppResult<Category> {
     let sql = format!("{SELECT_CATEGORY} WHERE c.id = ?1");
     conn.query_row(
         &sql,
-        params![id, period.0, period.1],
+        params![id, period.0, period.1, currency],
         map_category,
     )
     .map_err(|_| AppError::not_found("La categoría no existe."))

@@ -69,10 +69,27 @@ export function PurchasesPage() {
   const [busy, setBusy] = useState(false);
 
   const purchases = useAsync(() => api.listPurchases(status || undefined), [status]);
+  const all = useAsync(() => api.listPurchases(), []);
   const items = purchases.data ?? [];
 
+  useEffect(() => {
+    const sync = async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      purchases.reload();
+      all.reload();
+    };
+    void sync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Las estadísticas se calculan sobre todas las compras: el filtro de estado
+  // sólo aplica a la tabla.
   const stats = useMemo(() => {
-    const list = purchases.data ?? [];
+    const list = all.data ?? [];
     const currency = settings.defaultCurrency;
     const pending = list
       .filter((item) => item.currencyCode === currency)
@@ -80,8 +97,22 @@ export function PurchasesPage() {
     const paid = list.reduce((acc, item) => acc + item.installmentsPaid, 0);
     const total = list.reduce((acc, item) => acc + item.installmentsCount, 0);
     const overdue = list.reduce((acc, item) => acc + item.installmentsOverdue, 0);
-    return { currency, pending, paid, total, overdue };
-  }, [purchases.data, settings.defaultCurrency]);
+    return { currency, pending, paid, total, overdue, count: list.length };
+  }, [all.data, settings.defaultCurrency]);
+
+  /** Refresca los vencimientos y vuelve a cargar la lista de compras. */
+  const handleChanged = () => {
+    void (async () => {
+      try {
+        await api.refreshOverdueStatus();
+      } catch {
+        // Si no se pueden actualizar los vencimientos, se muestran los estados guardados.
+      }
+      purchases.reload();
+      all.reload();
+      await refresh();
+    })();
+  };
 
   const handleCancel = async () => {
     if (!cancelling) return;
@@ -91,8 +122,7 @@ export function PurchasesPage() {
       toast.success('Compra cancelada.');
       setCancelling(null);
       setDetailId(null);
-      purchases.reload();
-      await refresh();
+      handleChanged();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo cancelar la compra.');
     } finally {
@@ -120,8 +150,8 @@ export function PurchasesPage() {
       <div className="stat-grid">
         <Stat
           label="Compras"
-          value={String(items.length)}
-          meta="En el filtro actual"
+          value={String(stats.count)}
+          meta="En total, sin importar el filtro"
         />
         <Stat
           label="Cuotas pagadas"
@@ -295,6 +325,7 @@ export function PurchasesPage() {
         onClose={() => setFormOpen(false)}
         onSaved={() => {
           purchases.reload();
+          all.reload();
           void refresh();
         }}
       />
@@ -303,10 +334,7 @@ export function PurchasesPage() {
         <PurchaseDetailModal
           purchaseId={detailId}
           onClose={() => setDetailId(null)}
-          onChanged={() => {
-            purchases.reload();
-            void refresh();
-          }}
+          onChanged={handleChanged}
           onRequestCancel={(purchase) => setCancelling(purchase)}
         />
       ) : null}
@@ -360,6 +388,17 @@ function PurchaseDetailModal({
   const currency = data?.currencyCode ?? 'CLP';
   const purchaseUrl = data?.url ?? null;
   const remaining = target ? target.amount - target.paidAmount : 0;
+  // Lo que queda por devolver: lo pagado menos lo ya devuelto.
+  const refundable = data ? Math.max(0, data.paidAmount - data.refundedAmount) : 0;
+  // El backend sólo admite cuentas de la misma moneda que la compra.
+  const currencyAccounts = accounts.filter(
+    (account) => account.currencyCode === currency,
+  );
+  /** Deja la cuenta sólo si está en la moneda de la compra. */
+  const accountInCurrency = (id: string | null | undefined): string => {
+    if (!id) return '';
+    return currencyAccounts.some((account) => account.id === id) ? id : '';
+  };
   const percent =
     data && data.installmentsCount > 0
       ? Math.round((data.installmentsPaid / data.installmentsCount) * 100)
@@ -370,16 +409,16 @@ function PurchaseDetailModal({
     setTarget(installment);
     setAmount(installment.amount - installment.paidAmount);
     setDate(todayIso());
-    setAccountId(installment.accountId ?? data?.accountId ?? '');
+    setAccountId(accountInCurrency(installment.accountId ?? data?.accountId));
     setError(null);
   };
 
   const startRefund = () => {
     setMode('refund');
     setTarget(null);
-    setAmount(data ? data.paidAmount : null);
+    setAmount(data ? Math.max(0, data.paidAmount - data.refundedAmount) : null);
     setDate(todayIso());
-    setAccountId(data?.accountId ?? '');
+    setAccountId(accountInCurrency(data?.accountId));
     setError(null);
   };
 
@@ -428,12 +467,16 @@ function PurchaseDetailModal({
 
   const submitRefund = async () => {
     if (!data) return;
+    if (refundable <= 0) {
+      setError('Esta compra no tiene saldo por devolver.');
+      return;
+    }
     if (!amount || amount <= 0) {
       setError('Ingresa un monto mayor que cero.');
       return;
     }
-    if (amount > data.paidAmount) {
-      setError('La devolución supera el monto ya pagado de la compra.');
+    if (amount > refundable) {
+      setError('La devolución supera el monto que falta por devolver de la compra.');
       return;
     }
     if (!date) {
@@ -565,7 +608,7 @@ function PurchaseDetailModal({
                 type="button"
                 className="btn btn-sm"
                 onClick={startRefund}
-                disabled={data.status === 'cancelled' || data.paidAmount <= 0}
+                disabled={data.status === 'cancelled' || refundable <= 0}
               >
                 <Icon name="outgoing" size={13} />
                 Devolver dinero
@@ -642,22 +685,30 @@ function PurchaseDetailModal({
                 <Field
                   label="Cuenta"
                   className="span-2"
-                  hint="Si la dejas vacía se usa la cuenta de la compra."
+                  hint="Si la dejas vacía se usa la cuenta de la compra; si la compra no tiene cuenta, debes elegir una."
                 >
                   {(id) => (
-                    <select
-                      id={id}
-                      className="select"
-                      value={accountId}
-                      onChange={(event) => setAccountId(event.target.value)}
-                    >
-                      <option value="">Sin especificar</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} · {account.currencyCode}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        id={id}
+                        className="select"
+                        value={accountId}
+                        onChange={(event) => setAccountId(event.target.value)}
+                      >
+                        <option value="">Sin especificar</option>
+                        {currencyAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} · {account.currencyCode}
+                          </option>
+                        ))}
+                      </select>
+                      {currencyAccounts.length === 0 ? (
+                        <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                          No tienes cuentas en {currency}. Necesitas una cuenta en{' '}
+                          {currency} para registrar el pago de la cuota.
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </Field>
               </div>
@@ -690,10 +741,7 @@ function PurchaseDetailModal({
                 <Field
                   label="Monto devuelto"
                   required
-                  hint={`Máximo devuelto: ${formatCurrency(
-                    data?.paidAmount ?? 0,
-                    currency,
-                  )}`}
+                  hint={`Máximo devuelto: ${formatCurrency(refundable, currency)}`}
                 >
                   {(id) => (
                     <AmountInput
@@ -718,22 +766,30 @@ function PurchaseDetailModal({
                 <Field
                   label="Cuenta"
                   className="span-2"
-                  hint="Si la dejas vacía se usa la cuenta de la compra."
+                  hint="Si la dejas vacía se usa la cuenta de la compra; si la compra no tiene cuenta, debes elegir una."
                 >
                   {(id) => (
-                    <select
-                      id={id}
-                      className="select"
-                      value={accountId}
-                      onChange={(event) => setAccountId(event.target.value)}
-                    >
-                      <option value="">Sin especificar</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} · {account.currencyCode}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        id={id}
+                        className="select"
+                        value={accountId}
+                        onChange={(event) => setAccountId(event.target.value)}
+                      >
+                        <option value="">Sin especificar</option>
+                        {currencyAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} · {account.currencyCode}
+                          </option>
+                        ))}
+                      </select>
+                      {currencyAccounts.length === 0 ? (
+                        <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                          No tienes cuentas en {currency}. Necesitas una cuenta en{' '}
+                          {currency} para registrar la devolución.
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </Field>
               </div>
@@ -936,6 +992,23 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  // Las cuentas sólo pueden ser de la misma moneda que la compra.
+  const currencyAccounts = accounts.filter(
+    (account) => account.currencyCode === form.currency,
+  );
+
+  const handleCurrencyChange = (next: string) => {
+    setForm((current) => ({
+      ...current,
+      currency: next,
+      accountId: accounts.some(
+        (account) => account.id === current.accountId && account.currencyCode === next,
+      )
+        ? current.accountId
+        : '',
+    }));
+  };
+
   const handleSave = async () => {
     if (!form.name.trim()) {
       setError('Escribe el nombre de la compra.');
@@ -960,9 +1033,12 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
     if (
       form.installmentAmount &&
       form.installmentAmount > 0 &&
-      form.installmentAmount * form.installmentsCount > form.totalAmount
+      // El backend sólo rechaza cuando la última cuota quedaría negativa.
+      form.installmentAmount * (form.installmentsCount - 1) > form.totalAmount
     ) {
-      setError('El importe de cada cuota no puede ser mayor que el total de la compra.');
+      setError(
+        'El importe de cada cuota es demasiado alto para esa cantidad de cuotas: la última quedaría con un monto negativo.',
+      );
       return;
     }
     if (form.installmentsCount > 1 && form.paidImmediately) {
@@ -1096,7 +1172,7 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
                 id={id}
                 className="select"
                 value={form.currency}
-                onChange={(event) => update('currency', event.target.value)}
+                onChange={(event) => handleCurrencyChange(event.target.value)}
               >
                 {currencyOptions.map((currency) => (
                   <option key={currency.code} value={currency.code}>
@@ -1149,10 +1225,17 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
                 className="input"
                 type="number"
                 min={1}
+                step={1}
                 value={form.installmentsCount}
-                onChange={(event) =>
-                  update('installmentsCount', Math.max(1, Number(event.target.value) || 1))
-                }
+                onChange={(event) => {
+                  const count = Math.max(1, Math.round(Number(event.target.value) || 1));
+                  setForm((current) => ({
+                    ...current,
+                    installmentsCount: count,
+                    // La casilla de «pagada al contado» sólo existe con una cuota.
+                    paidImmediately: count > 1 ? false : current.paidImmediately,
+                  }));
+                }}
               />
             )}
           </Field>
@@ -1212,9 +1295,10 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
                   className="input"
                   type="number"
                   min={1}
+                  step={1}
                   value={form.frequencyDays}
                   onChange={(event) =>
-                    update('frequencyDays', Math.max(0, Number(event.target.value) || 0))
+                    update('frequencyDays', Math.max(1, Math.round(Number(event.target.value) || 1)))
                   }
                 />
               )}
@@ -1249,19 +1333,28 @@ function PurchaseFormModal({ open, onClose, onSaved }: PurchaseFormProps) {
         <div className="form-grid">
           <Field label="Cuenta">
             {(id) => (
-              <select
-                id={id}
-                className="select"
-                value={form.accountId}
-                onChange={(event) => update('accountId', event.target.value)}
-              >
-                <option value="">Sin especificar</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} · {account.currencyCode}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  id={id}
+                  className="select"
+                  value={form.accountId}
+                  onChange={(event) => update('accountId', event.target.value)}
+                >
+                  <option value="">Sin especificar</option>
+                  {currencyAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {account.currencyCode}
+                    </option>
+                  ))}
+                </select>
+                {currencyAccounts.length === 0 ? (
+                  <p className="text-sm text-soft" style={{ marginTop: 6 }}>
+                    No tienes cuentas en {form.currency}. Puedes guardar la compra
+                    igual, pero no podrás pagar sus cuotas hasta crear una cuenta en{' '}
+                    {form.currency}.
+                  </p>
+                ) : null}
+              </>
             )}
           </Field>
 

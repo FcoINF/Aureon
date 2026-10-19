@@ -23,7 +23,9 @@ const SELECT_ACCOUNT: &str = "
         ), 0) AS balance
     FROM accounts a
     LEFT JOIN transactions t
-        ON t.voided = 0 AND (t.account_id = a.id OR t.transfer_account_id = a.id)";
+        ON t.voided = 0
+       AND t.currency_code = a.currency_code
+       AND (t.account_id = a.id OR t.transfer_account_id = a.id)";
 
 fn map_account(row: &rusqlite::Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -130,6 +132,18 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
     conn.execute("DELETE FROM accounts WHERE id = ?1", [id])
         .map_err(AppError::from_sqlite)?;
     Ok(())
+}
+
+/// Número de movimientos asociados a la cuenta.
+pub fn movement_count(conn: &Connection, id: &str) -> AppResult<i64> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = ?1 OR transfer_account_id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(AppError::from_sqlite)?;
+    Ok(count)
 }
 
 pub fn exists(conn: &Connection, id: &str) -> AppResult<bool> {

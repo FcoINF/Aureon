@@ -61,8 +61,9 @@ fn normalize(conn: &Connection, input: &TransactionInput) -> AppResult<Normalize
     let currency = services::ensure_currency(conn, &input.currency_code)?;
     let date = dates::format_date(dates::parse_date(&input.date)?);
 
-    let account_id = services::ensure_account(conn, input.account_id.as_deref())?;
-    let transfer_account_id = services::ensure_account(conn, input.transfer_account_id.as_deref())?;
+    let account_id = services::ensure_account_in_currency(conn, input.account_id.as_deref(), &currency)?;
+    let transfer_account_id =
+        services::ensure_account_in_currency(conn, input.transfer_account_id.as_deref(), &currency)?;
     let contact_id = services::ensure_contact(conn, input.contact_id.as_deref())?;
 
     let mut category_id = services::ensure_category(conn, input.category_id.as_deref(), None)?;
@@ -73,7 +74,7 @@ fn normalize(conn: &Connection, input: &TransactionInput) -> AppResult<Normalize
                 return Err(AppError::validation("Indica la cuenta donde se recibe el dinero."));
             }
             if let Some(cat) = category_id.as_deref() {
-                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"))?;
+                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"), None)?;
                 if category.kind != "income" {
                     return Err(AppError::validation(
                         "La categoría seleccionada no es de ingresos.",
@@ -86,7 +87,7 @@ fn normalize(conn: &Connection, input: &TransactionInput) -> AppResult<Normalize
                 return Err(AppError::validation("Indica la cuenta desde donde se paga."));
             }
             if let Some(cat) = category_id.as_deref() {
-                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"))?;
+                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"), None)?;
                 if category.kind != "expense" {
                     return Err(AppError::validation(
                         "La categoría seleccionada no es de gastos.",
@@ -118,7 +119,7 @@ fn normalize(conn: &Connection, input: &TransactionInput) -> AppResult<Normalize
                 return Err(AppError::validation("Indica la cuenta donde vuelve el dinero."));
             }
             if let Some(cat) = category_id.as_deref() {
-                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"))?;
+                let category = repos::categories::get(conn, cat, ("0000-00-00", "9999-99-99"), None)?;
                 if category.kind != "income" {
                     return Err(AppError::validation(
                         "La categoría seleccionada no es de ingresos.",

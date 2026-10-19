@@ -13,8 +13,9 @@ pub fn list_categories(
     kind: Option<&str>,
     include_archived: bool,
     period: (&str, &str),
+    currency: Option<&str>,
 ) -> AppResult<Vec<Category>> {
-    repos::categories::list(conn, kind, include_archived, period)
+    repos::categories::list(conn, kind, include_archived, period, currency)
 }
 
 pub fn create_category(conn: &Connection, input: &CategoryInput) -> AppResult<Category> {
@@ -31,7 +32,7 @@ pub fn create_category(conn: &Connection, input: &CategoryInput) -> AppResult<Ca
         color: services::optional_text(input.color.clone()),
     };
     repos::categories::insert(conn, &id, &normalized, &dates::now_str())?;
-    repos::categories::get(conn, &id, ("0000-00-00", "9999-99-99"))
+    repos::categories::get(conn, &id, ("0000-00-00", "9999-99-99"), None)
 }
 
 pub fn update_category(conn: &Connection, id: &str, input: &CategoryInput) -> AppResult<Category> {
@@ -47,12 +48,12 @@ pub fn update_category(conn: &Connection, id: &str, input: &CategoryInput) -> Ap
         color: services::optional_text(input.color.clone()),
     };
     repos::categories::update(conn, id, &normalized)?;
-    repos::categories::get(conn, id, ("0000-00-00", "9999-99-99"))
+    repos::categories::get(conn, id, ("0000-00-00", "9999-99-99"), None)
 }
 
 pub fn archive_category(conn: &Connection, id: &str, archived: bool) -> AppResult<Category> {
     repos::categories::set_archived(conn, id, archived)?;
-    repos::categories::get(conn, id, ("0000-00-00", "9999-99-99"))
+    repos::categories::get(conn, id, ("0000-00-00", "9999-99-99"), None)
 }
 
 pub fn list_contacts(

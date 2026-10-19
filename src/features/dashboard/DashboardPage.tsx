@@ -34,6 +34,10 @@ export function DashboardPage() {
     () => api.dashboardSummary(period, currency),
     [period, currency],
   );
+  const summaryMonedas = useAsync(
+    () => api.summaryByCurrency(period),
+    [period],
+  );
   const series = useAsync(
     () => api.incomeExpenseSeries(period, currency, 'day'),
     [period, currency],
@@ -118,11 +122,14 @@ export function DashboardPage() {
             value={currency}
             onChange={(event) => setCurrency(event.target.value)}
           >
-            {(summary.data ? [currency] : [settings.defaultCurrency]).map((code) => (
-              <option key={code} value={code}>
-                {code}
+            {(summaryMonedas.data ?? []).map((item) => (
+              <option key={item.currencyCode} value={item.currencyCode}>
+                {item.currencyCode}
               </option>
             ))}
+            {(summaryMonedas.data ?? []).length === 0 ? (
+              <option value={settings.defaultCurrency}>{settings.defaultCurrency}</option>
+            ) : null}
           </select>
         </div>
       </div>

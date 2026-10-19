@@ -29,7 +29,7 @@ const SOURCE_ROUTES: Record<string, { to: string; label: string }> = {
   subscription: { to: '/suscripciones', label: 'Ver en suscripciones' },
   payable: { to: '/por-pagar', label: 'Ver en cuentas por pagar' },
   receivable: { to: '/por-cobrar', label: 'Ver en cuentas por cobrar' },
-  deposit: { to: '/depositos', label: 'Ver en depósitos pendientes' },
+  deposit: { to: '/depositos', label: 'Ver en depÃ³sitos pendientes' },
 };
 
 function toIso(date: Date): string {
@@ -39,7 +39,7 @@ function toIso(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Construye la grilla del mes: lunes primero y siempre seis semanas. */
+/** Construye la grilla del mes: lunes primero, con cinco o seis semanas según el mes. */
 function buildGrid(year: number, month: number): CalendarCell[] {
   const first = new Date(year, month, 1);
   const offset = (first.getDay() + 6) % 7;
@@ -59,7 +59,7 @@ function buildGrid(year: number, month: number): CalendarCell[] {
   return cells;
 }
 
-/** Vencido, próximo o completado. */
+/** Vencido, prÃ³ximo o completado. */
 function statusBadgeClass(status: string): string {
   if (status === 'overdue') return 'badge badge-warning';
   if (status === 'paid' || status === 'completed' || status === 'refunded') {
@@ -129,7 +129,7 @@ export function CalendarPage() {
     <>
       <PageHeader
         title="Calendario"
-        subtitle="Vencimientos de cuotas, suscripciones, cuentas por pagar y depósitos."
+        subtitle="Vencimientos de cuotas, suscripciones, cuentas por pagar y depÃ³sitos."
         actions={
           <div className="segmented" role="group" aria-label="Vista del calendario">
             <button
@@ -153,8 +153,8 @@ export function CalendarPage() {
       <div className="alert alert-info">
         <Icon name="info" size={15} />
         <span>
-          El calendario muestra sólo las fechas de vencimiento. Ningún pago se marca como
-          realizado automáticamente: registra cada pago desde el módulo correspondiente.
+          El calendario muestra sÃ³lo las fechas de vencimiento. NingÃºn pago se marca como
+          realizado automÃ¡ticamente: registra cada pago desde el mÃ³dulo correspondiente.
         </span>
       </div>
 
@@ -264,7 +264,7 @@ export function CalendarPage() {
                             justifyContent: 'flex-start',
                             gap: 4,
                           }}
-                          title={`${event.title} · ${formatCurrency(event.amount, event.currencyCode)}`}
+                          title={`${event.title} Â· ${formatCurrency(event.amount, event.currencyCode)}`}
                           onClick={() => setSelected(event)}
                         >
                           <span
@@ -278,7 +278,7 @@ export function CalendarPage() {
                       ))}
                       {cellEvents.length > 3 ? (
                         <span className="text-sm text-soft">
-                          +{cellEvents.length - 3} más
+                          +{cellEvents.length - 3} mÃ¡s
                         </span>
                       ) : null}
                     </div>
@@ -290,7 +290,7 @@ export function CalendarPage() {
             <EmptyState
               icon="calendar"
               title="Sin vencimientos en este mes"
-              text="Elige otro mes o revisa el detalle de cada compromiso en su módulo."
+              text="Elige otro mes o revisa el detalle de cada compromiso en su mÃ³dulo."
             />
           ) : (
             <div className="table-wrap">
@@ -387,7 +387,7 @@ export function CalendarPage() {
                     </Link>
                   ) : null}
                   <span className="text-sm text-soft">
-                    El estado no cambia por sí solo: registra el pago en su módulo.
+                    El estado no cambia por sÃ­ solo: registra el pago en su mÃ³dulo.
                   </span>
                 </div>
               </>
@@ -395,7 +395,7 @@ export function CalendarPage() {
               <EmptyState
                 icon="calendar"
                 title="Selecciona un vencimiento"
-                text="Elige un compromiso en la grilla para ver su monto, su estado y el módulo donde puedes gestionarlo."
+                text="Elige un compromiso en la grilla para ver su monto, su estado y el mÃ³dulo donde puedes gestionarlo."
               />
             )}
           </div>

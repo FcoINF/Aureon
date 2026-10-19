@@ -240,18 +240,26 @@ cargo test
 Cubren, entre otros:
 
 - creación diferida de la base de datos y persistencia tras cerrar la aplicación;
-- migraciones de esquema sin destruir datos;
+- migraciones de esquema sin destruir datos, y apartar una base vacía sin
+  sobrescribir nada;
 - cálculo de saldos, ingresos, gastos y transferencias sin doble contabilización;
+- rechazo de mover importes entre cuentas de monedas distintas, y de cambiar la
+  moneda de una cuenta con movimientos;
 - devoluciones ligadas a su gasto original, con límite de monto;
 - compras al contado, generación de cuotas, reparto de montos no divisibles;
 - pagos de cuotas, pagos duplicados y pagos parciales;
-- vencimientos detectados sin marcarse como pagados;
+- vencimientos detectados sin marcarse como pagados, y deudas que siguen
+  vencidas tras un cobro parcial;
 - cobros de suscripciones, cambio de precio y cancelación con historial intacto;
-- cuentas por cobrar y por pagar, con saldos pendientes;
+- cuentas por cobrar y por pagar, con saldos pendientes, y el rechazo de marcar
+  «pagado» sin registrar el pago;
 - depósitos pendientes y su finalización;
 - conversión de productos deseados en compras;
-- filtros del historial, exportaciones CSV y copias de seguridad con restauración;
+- filtros del historial, exportaciones CSV completas y con el separador
+  configurado, y copias de seguridad con restauración;
 - errores de escritura y atomicidad de las operaciones.
+
+La suite completa son **54 pruebas** (7 unitarias y 47 de integración).
 
 Además, `npm run typecheck` comprueba el tipado estricto de la interfaz.
 
@@ -365,9 +373,50 @@ desarrollo.
 Se usa `HashRouter` porque la aplicación se sirve desde un protocolo propio y no
 dispone de servidor de desarrollo con *fallback* de rutas.
 
----
+### Reglas de coherencia entre módulos
 
-## Estructura del proyecto
+Además de las reglas de cada módulo, Aureon garantiza que los datos de una
+cuenta y los de un movimiento nunca se contradigan:
+
+- **Una cuenta tiene una sola moneda.** El saldo se calcula sólo con los
+  movimientos de esa misma moneda: un gasto en dólares nunca se suma a una
+  cuenta en pesos. Además, la moneda de una cuenta con movimientos registrados
+  no se puede cambiar (el backend lo rechaza), porque reinterpretaría importes
+  ya guardados.
+- **Un movimiento no puede mezclarse con otra moneda.** Si intentas pagar una
+  cuota en dólares desde una cuenta en pesos, la operación se rechaza con un
+  mensaje claro. En la interfaz, los selectores de cuenta muestran únicamente
+  las cuentas de la moneda del registro.
+- **Marcar «pagado» no mueve dinero.** Para dejar una cuenta por cobrar o por
+  pagar saldada hay que registrar el cobro o el pago: si no, el saldo pendiente
+  quedaría en cero sin que el dinero se moviera. El backend rechaza el estado
+  «pagado» mientras quede saldo.
+- **Un cobro parcial no esconde un vencimiento.** Si una deuda ya está vencida,
+  sigue vencida después de un cobro parcial.
+- **Un presupuesto no se duplica.** Cada par (categoría, moneda) admite un solo
+  presupuesto; al mover uno a una categoría ya presupuestada, la aplicación
+  avisa en lugar de sobrescribir el límite existente.
+- **Nadie participa dos veces de la misma suscripción**, ni con porcentajes que
+  sumen más de 100 % sin avisar.
+
+### Exportaciones completas
+
+Las exportaciones CSV no se truncan en silencio: se exporta todo lo que
+cumple los filtros, con un límite muy superior al de las tablas. La tabla del
+historial muestra los 500 movimientos más recientes e indica cuántos hay en
+total; el CSV y el PDF incluyen todos. El separador de exportación configurado
+en Preferencias se respeta realmente (punto y coma por defecto, el habitual en
+Excel en español).
+
+### Recuperación ante una base de datos incompleta
+
+Si la base de datos aparece vacía (0 bytes, por ejemplo tras un cierre abrupto
+durante su creación), Aureon no la sobrescribe: la aparta con otro nombre y
+empieza de cero, sin dejar rastro roto. Si el archivo está dañado, la
+aplicación avisa y pide restaurar una copia de seguridad en lugar de
+sobrescribir los datos.
+
+---
 
 ```
 src/
