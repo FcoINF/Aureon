@@ -40,7 +40,7 @@
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -501,7 +501,7 @@
   display: grid;
   place-items: center;
   padding: var(--space-6);
-  background: rgba(28, 26, 22, 0.42);
+  background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(2px);
   z-index: 60;
 }

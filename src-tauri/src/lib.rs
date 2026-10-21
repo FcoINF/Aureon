@@ -123,6 +123,7 @@ pub fn run() {
             commands::system::app_info,
             commands::system::refresh_overdue_status,
             commands::system::export_dataset,
+            commands::system::export_excel_report,
             commands::system::write_text_file,
             commands::system::write_base64_file,
             commands::system::create_backup,

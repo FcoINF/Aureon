@@ -39,7 +39,13 @@ export function DashboardPage() {
     [period],
   );
   const series = useAsync(
-    () => api.incomeExpenseSeries(period, currency, 'day'),
+    () =>
+      api.incomeExpenseSeries(
+        period,
+        currency,
+        // En el gráfico de barras anual conviene agrupar por mes.
+        period === 'year' ? 'month' : 'day',
+      ),
     [period, currency],
   );
   const categories = useAsync(
@@ -230,6 +236,7 @@ export function DashboardPage() {
                 income={incomes}
                 expenses={expenses}
                 currency={currency}
+                variant="bar"
               />
             )}
           </div>

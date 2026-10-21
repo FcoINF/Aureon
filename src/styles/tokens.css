@@ -1,42 +1,45 @@
 /* ==========================================================================
    Aureon · Variables de diseño
-   Identidad: valor, estabilidad y un brillo dorado discreto.
+   Identidad: monocromática — negro, blanco y grises.
    ========================================================================== */
 
 :root {
   /* Superficies */
-  --bg: #f6f5f2;
-  --bg-tint: #fbfaf7;
+  --bg: #f4f4f4;
+  --bg-tint: #fafafa;
   --surface: #ffffff;
-  --surface-alt: #faf9f6;
-  --surface-sunken: #f2f0ea;
+  --surface-alt: #f7f7f7;
+  --surface-sunken: #ececec;
 
   /* Bordes */
-  --border: #e7e3da;
-  --border-strong: #d7d1c4;
-  --border-focus: #b08b4a;
+  --border: #e4e4e4;
+  --border-strong: #cfcfcf;
+  --border-focus: #1a1a1a;
 
   /* Texto */
-  --text: #23211d;
-  --text-muted: #6b665d;
-  --text-soft: #948e83;
+  --text: #181818;
+  --text-muted: #4f4f4f;
+  --text-soft: #6f6f6f;
   --text-inverse: #ffffff;
 
-  /* Acento dorado */
-  --accent: #b08b4a;
-  --accent-strong: #97743a;
-  --accent-soft: #f5ede0;
-  --accent-line: #e8dcc6;
+  /* Acento monocromático */
+  --accent: #1a1a1a;
+  --accent-strong: #000000;
+  --accent-soft: #ededed;
+  --accent-line: #dcdcdc;
 
-  /* Semánticos */
-  --income: #2f7a5a;
-  --income-soft: #e8f2ed;
-  --expense: #b0574b;
-  --expense-soft: #f8ecea;
-  --warning: #b9862b;
-  --warning-soft: #fbf1de;
-  --info: #3f6f9e;
-  --info-soft: #e9f0f7;
+  /* Semánticos (escala de grises) */
+  --income: #1f1f1f;
+  --income-soft: #ececec;
+  --expense: #666666;
+  --expense-soft: #f2f2f2;
+  --warning: #4d4d4d;
+  --warning-soft: #e8e8e8;
+  --info: #5c5c5c;
+  --info-soft: #f1f1f1;
+
+  /* Gráficos */
+  --chart-grid: rgba(0, 0, 0, 0.08);
 
   /* Espaciado */
   --space-1: 4px;
@@ -56,10 +59,10 @@
   --radius-pill: 999px;
 
   /* Sombras */
-  --shadow-xs: 0 1px 2px rgba(35, 33, 29, 0.04);
-  --shadow-sm: 0 1px 3px rgba(35, 33, 29, 0.06);
-  --shadow-md: 0 4px 16px rgba(35, 33, 29, 0.08);
-  --shadow-lg: 0 12px 32px rgba(35, 33, 29, 0.12);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.09);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.14);
 
   /* Tipografía */
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
@@ -81,34 +84,36 @@
 }
 
 [data-theme='dark'] {
-  --bg: #171614;
-  --bg-tint: #1b1a17;
-  --surface: #201f1c;
-  --surface-alt: #262521;
-  --surface-sunken: #1a1917;
+  --bg: #121212;
+  --bg-tint: #161616;
+  --surface: #1a1a1a;
+  --surface-alt: #202020;
+  --surface-sunken: #0e0e0e;
 
-  --border: #34322d;
-  --border-strong: #46433c;
-  --border-focus: #c9a55f;
+  --border: #2b2b2b;
+  --border-strong: #3d3d3d;
+  --border-focus: #e5e5e5;
 
-  --text: #eceae4;
-  --text-muted: #a9a49a;
-  --text-soft: #7d786f;
-  --text-inverse: #1a1917;
+  --text: #ededed;
+  --text-muted: #a8a8a8;
+  --text-soft: #8c8c8c;
+  --text-inverse: #121212;
 
-  --accent: #c9a55f;
-  --accent-strong: #d9b871;
-  --accent-soft: #2b2619;
-  --accent-line: #3d3421;
+  --accent: #e5e5e5;
+  --accent-strong: #ffffff;
+  --accent-soft: #262626;
+  --accent-line: #3a3a3a;
 
-  --income: #63b892;
-  --income-soft: #1b2b24;
-  --expense: #d98076;
-  --expense-soft: #2e1f1d;
-  --warning: #d3a851;
-  --warning-soft: #2c2417;
-  --info: #7aa8d4;
-  --info-soft: #1b2530;
+  --income: #f0f0f0;
+  --income-soft: #242424;
+  --expense: #a3a3a3;
+  --expense-soft: #1e1e1e;
+  --warning: #cfcfcf;
+  --warning-soft: #262626;
+  --info: #b8b8b8;
+  --info-soft: #222222;
+
+  --chart-grid: rgba(255, 255, 255, 0.1);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);

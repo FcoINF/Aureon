@@ -14,11 +14,18 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "esquema_inicial",
-    sql: include_str!("../../migrations/0001_init.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "esquema_inicial",
+        sql: include_str!("../../migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "paleta_monocromatica",
+        sql: include_str!("../../migrations/0002_paleta_monocromatica.sql"),
+    },
+];
 
 pub const CREATE_MIGRATIONS_TABLE: &str = "
     CREATE TABLE IF NOT EXISTS schema_migrations (

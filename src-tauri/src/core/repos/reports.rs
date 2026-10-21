@@ -145,7 +145,7 @@ pub fn expenses_by_category(
     currency: &str,
 ) -> AppResult<Vec<CategoryBreakdown>> {
     let sql = "SELECT t.category_id, COALESCE(c.name, 'Sin categoría') AS label,
-                      COALESCE(c.color, '#9A8F7A') AS color, SUM(t.amount) AS amount
+                      COALESCE(c.color, '#8A8A8A') AS color, SUM(t.amount) AS amount
                  FROM transactions t
                  LEFT JOIN categories c ON c.id = t.category_id
                 WHERE t.voided = 0 AND t.type = 'expense' AND t.date >= ?1 AND t.date <= ?2
@@ -171,7 +171,7 @@ pub fn expenses_by_contact(
     currency: &str,
 ) -> AppResult<Vec<CategoryBreakdown>> {
     let sql = "SELECT t.contact_id, COALESCE(ct.name, 'Sin comercio o persona') AS label,
-                      '#B08B4A' AS color, SUM(t.amount) AS amount
+                      '#A6A6A6' AS color, SUM(t.amount) AS amount
                  FROM transactions t
                  LEFT JOIN contacts ct ON ct.id = t.contact_id
                 WHERE t.voided = 0 AND t.type = 'expense' AND t.date >= ?1 AND t.date <= ?2

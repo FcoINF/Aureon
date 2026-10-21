@@ -8,7 +8,7 @@ use crate::core::dates;
 use crate::core::error::AppError;
 use crate::core::models::{AppInfo, Attachment, BackupResult, TransactionFilter};
 use crate::core::repos;
-use crate::core::services::{backup, export, settings};
+use crate::core::services::{backup, excel, export, settings};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,44 @@ pub fn export_dataset(
         .ok_or_else(|| "Todavía no hay información para exportar.".to_string())
 }
 
+/// Genera y guarda el reporte financiero en formato Excel (.xlsx).
+///
+/// El libro se construye en Rust para poder incluir estilos, filtros y
+/// gráficos reales, algo que un CSV no puede representar.
+#[tauri::command]
+pub fn export_excel_report(
+    state: State<'_, AppState>,
+    path: String,
+    filter: TransactionFilter,
+    currency: String,
+    period_label: Option<String>,
+) -> Result<String, String> {
+    let target = PathBuf::from(&path);
+    let extension = target
+        .extension()
+        .map(|value| value.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if extension != "xlsx" {
+        return Err("El reporte debe guardarse con extensión .xlsx.".to_string());
+    }
+
+    state
+        .read(|conn| {
+            excel::report(
+                conn,
+                &target,
+                &filter,
+                &currency,
+                period_label.as_deref().unwrap_or("Período"),
+            )
+        })
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Todavía no hay información para exportar.".to_string())?;
+
+    notify_shell_file_created(&target);
+    Ok(target.to_string_lossy().to_string())
+}
+
 /// Escribe un archivo de texto en la ruta indicada (usado por las exportaciones).
 #[tauri::command]
 pub fn write_text_file(path: String, contents: String) -> Result<String, String> {
@@ -117,6 +155,7 @@ pub fn write_text_file(path: String, contents: String) -> Result<String, String>
     }
     std::fs::write(&target, contents.as_bytes())
         .map_err(|e| format!("No se pudo guardar el archivo: {e}"))?;
+    notify_shell_file_created(&target);
     Ok(target.to_string_lossy().to_string())
 }
 
@@ -139,8 +178,55 @@ pub fn write_base64_file(path: String, contents: String) -> Result<String, Strin
     }
     std::fs::write(&target, bytes)
         .map_err(|e| format!("No se pudo guardar el archivo: {e}"))?;
+    notify_shell_file_created(&target);
     Ok(target.to_string_lossy().to_string())
 }
+
+/// Avisa a Explorer que se creó un archivo para que actualice la carpeta.
+///
+/// Sin este aviso, al guardar en el escritorio (especialmente si está
+/// sincronizado con OneDrive) el archivo puede tardar en aparecer hasta que
+/// el usuario actualiza manualmente la vista.
+#[cfg(target_os = "windows")]
+fn notify_shell_file_created(path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHChangeNotify(
+            event_id: i32,
+            flags: u32,
+            item1: *const std::ffi::c_void,
+            item2: *const std::ffi::c_void,
+        );
+    }
+
+    const SHCNE_CREATE: i32 = 0x0000_0002;
+    const SHCNE_UPDATEDIR: i32 = 0x0000_1000;
+    const SHCNF_PATHW: u32 = 0x0005;
+
+    unsafe {
+        if let Some(parent) = path.parent() {
+            let folder: Vec<u16> = parent.as_os_str().encode_wide().chain(Some(0)).collect();
+            SHChangeNotify(
+                SHCNE_UPDATEDIR,
+                SHCNF_PATHW,
+                folder.as_ptr() as *const std::ffi::c_void,
+                std::ptr::null(),
+            );
+        }
+        let file: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        SHChangeNotify(
+            SHCNE_CREATE,
+            SHCNF_PATHW,
+            file.as_ptr() as *const std::ffi::c_void,
+            std::ptr::null(),
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn notify_shell_file_created(_path: &Path) {}
 
 /// Decodifica texto en base64 estándar.
 fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
@@ -181,9 +267,11 @@ pub fn create_backup(
     path: String,
 ) -> Result<BackupResult, String> {
     let target = PathBuf::from(&path);
-    state
+    let result = state
         .write(|conn| backup::create_snapshot(conn, &target))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    notify_shell_file_created(&target);
+    Ok(result)
 }
 
 #[tauri::command]

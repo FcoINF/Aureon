@@ -27,7 +27,7 @@ import {
 } from '../../utils/format';
 
 // ---------------------------------------------------------------------------
-// PerÃ­odos
+// Períodos
 // ---------------------------------------------------------------------------
 
 interface DateRange {
@@ -62,7 +62,7 @@ function parseIso(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
 }
 
-/** Rango de un perÃ­odo predefinido (misma regla que usa el motor de reportes). */
+/** Rango de un período predefinido (misma regla que usa el motor de reportes). */
 function periodRange(period: string): DateRange {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -125,7 +125,7 @@ function shiftRangeMonths(range: DateRange, months: number): DateRange {
   };
 }
 
-/** PerÃ­odo inmediatamente anterior al elegido. */
+/** Período inmediatamente anterior al elegido. */
 function previousRange(period: string, current: DateRange): DateRange {
   switch (period) {
     case 'today':
@@ -156,7 +156,7 @@ function previousRange(period: string, current: DateRange): DateRange {
   }
 }
 
-/** PerÃ­odo anterior que tambiÃ©n sabe resolver el motor de reportes. */
+/** Período anterior que también sabe resolver el motor de reportes. */
 const PREVIOUS_PERIOD_KEY: Record<string, string> = {
   today: 'yesterday',
   week: 'last_week',
@@ -165,7 +165,7 @@ const PREVIOUS_PERIOD_KEY: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// CÃ¡lculos de apoyo
+// Cálculos de apoyo
 // ---------------------------------------------------------------------------
 
 function emptySummary(currencyCode: string): HistorySummary {
@@ -210,7 +210,7 @@ function summarize(transactions: Transaction[]): HistorySummary[] {
     summary.transactionCount += 1;
     map.set(item.currencyCode, summary);
   }
-  // El balance neto se calcula al final: sin Ã©l, la tarjeta mostraba $0.
+  // El balance neto se calcula al final: sin él, la tarjeta mostraba $0.
   for (const summary of map.values()) {
     summary.net = summary.income - summary.expenses + summary.refunds;
   }
@@ -233,14 +233,14 @@ function buildSeries(transactions: Transaction[], currency: string): SeriesPoint
   return [...points.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Gastos por categorÃ­a para rangos personalizados. */
+/** Gastos por categoría para rangos personalizados. */
 function buildCategories(transactions: Transaction[], currency: string): CategoryBreakdown[] {
   const map = new Map<string, CategoryBreakdown>();
   for (const item of transactions) {
     if (item.voided) continue;
     if (item.transactionType !== 'expense') continue;
     if (item.currencyCode !== currency) continue;
-    const label = item.categoryName ?? 'Sin categorÃ­a';
+    const label = item.categoryName ?? 'Sin categoría';
     const current = map.get(label) ?? { id: item.categoryId, label, amount: 0, color: null };
     current.amount += item.amount;
     map.set(label, current);
@@ -270,14 +270,14 @@ async function loadSummary(
 }
 
 function percentChange(current: number, previous: number): string {
-  if (previous === 0) return 'Sin base de comparaciÃ³n';
+  if (previous === 0) return 'Sin base de comparación';
   const diff = ((current - previous) / Math.abs(previous)) * 100;
   const sign = diff > 0 ? '+' : '';
   return `${sign}${diff.toFixed(1).replace('.', ',')} %`;
 }
 
 // ---------------------------------------------------------------------------
-// PÃ¡gina
+// Página
 // ---------------------------------------------------------------------------
 
 export function HistoryPage() {
@@ -295,6 +295,7 @@ export function HistoryPage() {
   const [minAmount, setMinAmount] = useState<number | null>(null);
   const [maxAmount, setMaxAmount] = useState<number | null>(null);
   const [includeVoided, setIncludeVoided] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   useEffect(() => {
     if (period === 'custom' && !customStart && !customEnd) {
@@ -314,7 +315,7 @@ export function HistoryPage() {
 
   /**
    * Un rango personalizado necesita las dos fechas. Con una sola, la consulta
-   * se quedarÃ­a sin lÃ­mites y devolverÃ­a todo el historial.
+   * se quedaría sin límites y devolvería todo el historial.
    */
   const rangoIncompleto = period === 'custom' && (!customStart || !customEnd);
 
@@ -463,7 +464,7 @@ export function HistoryPage() {
         filters: [{ name: 'CSV', extensions: ['csv'] }],
       });
       if (!path) return;
-      // Sin el lÃ­mite de la tabla: el archivo sale completo.
+      // Sin el límite de la tabla: el archivo sale completo.
       const contents = await api.exportDataset('transactions', {
         ...filter,
         limit: null,
@@ -472,6 +473,31 @@ export function HistoryPage() {
       toast.success(`Movimientos exportados en ${path}.`);
     } catch (err) {
       toast.error(readError(err));
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (rangoIncompleto) return;
+    setExportingExcel(true);
+    try {
+      const path = await save({
+        defaultPath: `aureon-reporte-${todayIso()}.xlsx`,
+        filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+      });
+      if (!path) return;
+      // El libro incluye todos los movimientos que cumplen los filtros, no
+      // solo las 500 filas visibles en la tabla.
+      await api.exportExcelReport(
+        path,
+        { ...filter, limit: null },
+        currency,
+        periodLabel,
+      );
+      toast.success(`Reporte de Excel guardado en ${path}.`);
+    } catch (err) {
+      toast.error(readError(err));
+    } finally {
+      setExportingExcel(false);
     }
   };
 
@@ -504,16 +530,25 @@ export function HistoryPage() {
 
   const periodLabel =
     period === 'custom'
-      ? `${formatDate(range.start)} â€“ ${formatDate(range.end)}`
-      : (PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? 'PerÃ­odo');
+      ? `${formatDate(range.start)} – ${formatDate(range.end)}`
+      : (PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? 'Período');
 
   return (
     <>
       <PageHeader
         title="Historial y reportes"
-        subtitle="Consulta tus ingresos, gastos y compromisos por perÃ­odo."
+        subtitle="Consulta tus ingresos, gastos y compromisos por período."
         actions={
           <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleExportExcel()}
+              disabled={exportingExcel || rangoIncompleto}
+            >
+              <Icon name="chart" size={14} />
+              {exportingExcel ? 'Generando…' : 'Exportar Excel'}
+            </button>
             <button type="button" className="btn" onClick={() => void handleExportPdf()}>
               <Icon name="download" size={14} />
               Exportar PDF
@@ -528,7 +563,7 @@ export function HistoryPage() {
 
       <section className="card">
         <div className="filter-bar">
-          <Field label="PerÃ­odo">
+          <Field label="Período">
             {(id) => (
               <select
                 id={id}
@@ -574,7 +609,7 @@ export function HistoryPage() {
           ) : null}
 
           <span className="text-sm text-muted">
-            {formatDate(range.start)} â€“ {formatDate(range.end)}
+            {formatDate(range.start)} – {formatDate(range.end)}
           </span>
 
           <label className="checkbox" style={{ marginBottom: 6 }}>
@@ -593,7 +628,7 @@ export function HistoryPage() {
           <Icon name="alert" size={15} />
           <span>
             Elige las dos fechas del rango para consultar los movimientos. Con una sola
-            fecha no se puede acotar la bÃºsqueda.
+            fecha no se puede acotar la búsqueda.
           </span>
         </div>
       ) : null}
@@ -604,13 +639,13 @@ export function HistoryPage() {
         <Stat
           label="Ingresos"
           value={formatCurrency(current?.income ?? 0, currency)}
-          meta="Entradas del perÃ­odo"
+          meta="Entradas del período"
           tone="income"
         />
         <Stat
           label="Gastos"
           value={formatCurrency(current?.expenses ?? 0, currency)}
-          meta="Salidas del perÃ­odo"
+          meta="Salidas del período"
           tone="expense"
         />
         <Stat
@@ -622,7 +657,7 @@ export function HistoryPage() {
         <Stat
           label="Movimientos"
           value={String(current?.transactionCount ?? 0)}
-          meta="Operaciones registradas en el perÃ­odo"
+          meta="Operaciones registradas en el período"
         />
       </div>
 
@@ -630,7 +665,7 @@ export function HistoryPage() {
         <Stat
           label="Devoluciones"
           value={formatCurrency(current?.refunds ?? 0, currency)}
-          meta="Dinero que volviÃ³ a tus cuentas"
+          meta="Dinero que volvió a tus cuentas"
         />
         <Stat
           label="Transferencias entre cuentas"
@@ -666,7 +701,7 @@ export function HistoryPage() {
 
       <section className="card">
         <header className="card-header">
-          <h2 className="card-title">ComparaciÃ³n con el perÃ­odo anterior</h2>
+          <h2 className="card-title">Comparación con el período anterior</h2>
           <span className="text-sm text-muted">{currency}</span>
         </header>
         <div className="card-body">
@@ -676,7 +711,7 @@ export function HistoryPage() {
               <span className="detail-value">
                 {formatCurrency(current?.income ?? 0, currency)}
                 <span className="text-sm text-muted">
-                  {' Â· '}
+                  {' · '}
                   {percentChange(current?.income ?? 0, before?.income ?? 0)}
                 </span>
               </span>
@@ -686,7 +721,7 @@ export function HistoryPage() {
               <span className="detail-value">
                 {formatCurrency(current?.expenses ?? 0, currency)}
                 <span className="text-sm text-muted">
-                  {' Â· '}
+                  {' · '}
                   {percentChange(current?.expenses ?? 0, before?.expenses ?? 0)}
                 </span>
               </span>
@@ -696,7 +731,7 @@ export function HistoryPage() {
               <span className="detail-value">
                 {current?.transactionCount ?? 0}
                 <span className="text-sm text-muted">
-                  {' Â· '}
+                  {' · '}
                   {percentChange(
                     current?.transactionCount ?? 0,
                     before?.transactionCount ?? 0,
@@ -706,8 +741,8 @@ export function HistoryPage() {
             </div>
           </div>
           <p className="text-sm text-soft" style={{ marginTop: 'var(--space-4)' }}>
-            La comparaciÃ³n usa el perÃ­odo equivalente mÃ¡s cercano: {periodLabel} contra el
-            perÃ­odo anterior.
+            La comparación usa el período equivalente más cercano: {periodLabel} contra el
+            período anterior.
           </p>
         </div>
       </section>
@@ -728,8 +763,8 @@ export function HistoryPage() {
             ) : chartLabels.length === 0 ? (
               <EmptyState
                 icon="chart"
-                title="Sin movimientos en este perÃ­odo"
-                text="Registra ingresos y gastos para ver su evoluciÃ³n."
+                title="Sin movimientos en este período"
+                text="Registra ingresos y gastos para ver su evolución."
               />
             ) : (
               <IncomeExpenseChart
@@ -744,7 +779,7 @@ export function HistoryPage() {
 
         <section className="card">
           <header className="card-header">
-            <h2 className="card-title">Gastos por categorÃ­a</h2>
+            <h2 className="card-title">Gastos por categoría</h2>
           </header>
           <div className="card-body">
             {categories.loading ? (
@@ -765,7 +800,7 @@ export function HistoryPage() {
       {otherCurrencies.length > 0 ? (
         <section className="card">
           <header className="card-header">
-            <h2 className="card-title">Otras monedas del perÃ­odo</h2>
+            <h2 className="card-title">Otras monedas del período</h2>
           </header>
           <div className="card-body">
             <div className="grid-2">
@@ -824,7 +859,7 @@ export function HistoryPage() {
             )}
           </Field>
 
-          <Field label="CategorÃ­a">
+          <Field label="Categoría">
             {(id) => (
               <select
                 id={id}
@@ -842,7 +877,7 @@ export function HistoryPage() {
             )}
           </Field>
 
-          <Field label="MÃ©todo de pago">
+          <Field label="Método de pago">
             {(id) => (
               <select
                 id={id}
@@ -860,7 +895,7 @@ export function HistoryPage() {
             )}
           </Field>
 
-          <Field label="Monto mÃ­nimo">
+          <Field label="Monto mínimo">
             {(id) => (
               <AmountInput
                 id={id}
@@ -871,7 +906,7 @@ export function HistoryPage() {
             )}
           </Field>
 
-          <Field label="Monto mÃ¡ximo">
+          <Field label="Monto máximo">
             {(id) => (
               <AmountInput
                 id={id}
@@ -921,7 +956,7 @@ export function HistoryPage() {
               {(totalMovimientos.data ?? (movements.data ?? []).length) === 1 ? '' : 's'} con
               los filtros aplicados
               {(totalMovimientos.data ?? 0) > (movements.data ?? []).length
-                ? ` (se muestran los ${(movements.data ?? []).length} mÃ¡s recientes; el CSV y el PDF incluyen todos)`
+                ? ` (se muestran los ${(movements.data ?? []).length} más recientes; el CSV, el PDF y el Excel incluyen todos)`
                 : ''}
             </span>
             <button type="button" className="btn btn-sm" onClick={() => void handleExport()}>
@@ -940,7 +975,7 @@ export function HistoryPage() {
             <EmptyState
               icon="arrows"
               title="Sin movimientos con estos filtros"
-              text="Cambia el perÃ­odo o quita algÃºn filtro para ver mÃ¡s resultados."
+              text="Cambia el período o quita algún filtro para ver más resultados."
             />
           ) : (
             <div className="table-wrap">
@@ -949,7 +984,7 @@ export function HistoryPage() {
                   <tr>
                     <th>Fecha</th>
                     <th>Concepto</th>
-                    <th>CategorÃ­a</th>
+                    <th>Categoría</th>
                     <th>Cuenta</th>
                     <th className="num">Monto</th>
                   </tr>
@@ -981,11 +1016,11 @@ export function HistoryPage() {
                           <span className="text-xs text-soft">Anulado</span>
                         ) : null}
                       </td>
-                      <td className="text-sm text-muted">{item.categoryName ?? 'â€”'}</td>
+                      <td className="text-sm text-muted">{item.categoryName ?? '—'}</td>
                       <td className="text-sm text-muted">
                         {item.transactionType === 'transfer'
-                          ? `${item.accountName} â†’ ${item.transferAccountName}`
-                          : (item.accountName ?? 'â€”')}
+                          ? `${item.accountName} → ${item.transferAccountName}`
+                          : (item.accountName ?? '—')}
                       </td>
                       <td className="num">
                         <Money

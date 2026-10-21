@@ -48,21 +48,21 @@ pub const MONEDAS: [CatalogCurrency; 3] = [
 
 /// Categorías que Aureon propone al empezar.
 pub const CATEGORIAS: [CatalogCategory; 15] = [
-    CatalogCategory { id: "cat-alimentacion", name: "Alimentación", kind: "expense", color: "#C2703D" },
-    CatalogCategory { id: "cat-transporte", name: "Transporte", kind: "expense", color: "#4C7BA8" },
-    CatalogCategory { id: "cat-vivienda", name: "Vivienda", kind: "expense", color: "#6C6F86" },
-    CatalogCategory { id: "cat-servicios", name: "Servicios básicos", kind: "expense", color: "#3F8A7A" },
-    CatalogCategory { id: "cat-salud", name: "Salud", kind: "expense", color: "#C05A6B" },
-    CatalogCategory { id: "cat-educacion", name: "Educación", kind: "expense", color: "#7A62A8" },
-    CatalogCategory { id: "cat-entretenimiento", name: "Entretenimiento", kind: "expense", color: "#C08A3E" },
-    CatalogCategory { id: "cat-compras", name: "Compras online", kind: "expense", color: "#B0674F" },
-    CatalogCategory { id: "cat-suscripciones", name: "Suscripciones", kind: "expense", color: "#8A6F9C" },
-    CatalogCategory { id: "cat-tecnologia", name: "Tecnología", kind: "expense", color: "#4C7BA8" },
-    CatalogCategory { id: "cat-ropa", name: "Ropa", kind: "expense", color: "#B0768C" },
-    CatalogCategory { id: "cat-ahorro", name: "Ahorro", kind: "expense", color: "#3F8A7A" },
-    CatalogCategory { id: "cat-salud-otros", name: "Otros gastos", kind: "expense", color: "#7B7F8A" },
-    CatalogCategory { id: "cat-laboral", name: "Ingresos laborales", kind: "income", color: "#2F7A5A" },
-    CatalogCategory { id: "cat-ingresos-otros", name: "Otros ingresos", kind: "income", color: "#3F8A7A" },
+    CatalogCategory { id: "cat-alimentacion", name: "Alimentación", kind: "expense", color: "#5A5A5A" },
+    CatalogCategory { id: "cat-transporte", name: "Transporte", kind: "expense", color: "#4D4D4D" },
+    CatalogCategory { id: "cat-vivienda", name: "Vivienda", kind: "expense", color: "#6B6B6B" },
+    CatalogCategory { id: "cat-servicios", name: "Servicios básicos", kind: "expense", color: "#454545" },
+    CatalogCategory { id: "cat-salud", name: "Salud", kind: "expense", color: "#7A7A7A" },
+    CatalogCategory { id: "cat-educacion", name: "Educación", kind: "expense", color: "#616161" },
+    CatalogCategory { id: "cat-entretenimiento", name: "Entretenimiento", kind: "expense", color: "#8A8A8A" },
+    CatalogCategory { id: "cat-compras", name: "Compras online", kind: "expense", color: "#525252" },
+    CatalogCategory { id: "cat-suscripciones", name: "Suscripciones", kind: "expense", color: "#737373" },
+    CatalogCategory { id: "cat-tecnologia", name: "Tecnología", kind: "expense", color: "#666666" },
+    CatalogCategory { id: "cat-ropa", name: "Ropa", kind: "expense", color: "#999999" },
+    CatalogCategory { id: "cat-ahorro", name: "Ahorro", kind: "expense", color: "#4A4A4A" },
+    CatalogCategory { id: "cat-salud-otros", name: "Otros gastos", kind: "expense", color: "#7F7F7F" },
+    CatalogCategory { id: "cat-laboral", name: "Ingresos laborales", kind: "income", color: "#A6A6A6" },
+    CatalogCategory { id: "cat-ingresos-otros", name: "Otros ingresos", kind: "income", color: "#949494" },
 ];
 
 /// Monedas del catálogo, en formato de modelo.

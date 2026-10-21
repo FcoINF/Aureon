@@ -92,6 +92,12 @@ impl From<rusqlite::Error> for AppError {
     }
 }
 
+impl From<rust_xlsxwriter::XlsxError> for AppError {
+    fn from(err: rust_xlsxwriter::XlsxError) -> Self {
+        AppError::other(format!("No se pudo generar el libro de Excel: {err}"))
+    }
+}
+
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;

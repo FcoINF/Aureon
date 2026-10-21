@@ -6,6 +6,8 @@
  */
 import {
   ArcElement,
+  BarController,
+  BarElement,
   CategoryScale,
   Chart as ChartJS,
   Filler,
@@ -16,12 +18,14 @@ import {
   PointElement,
   Tooltip,
 } from 'chart.js';
-import { Doughnut, Line } from 'react-chartjs-2';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
 
 import { formatAmount, exponentOf } from '../../utils/format';
 
 ChartJS.register(
   ArcElement,
+  BarController,
+  BarElement,
   CategoryScale,
   Filler,
   Legend,
@@ -32,16 +36,58 @@ ChartJS.register(
   Tooltip,
 );
 
-const INCOME = '#2f7a5a';
-const EXPENSE = '#b0574b';
-const ACCENT = '#b08b4a';
-const GRID = 'rgba(140, 132, 118, 0.18)';
-const TICK = '#948e83';
-
+/**
+ * Paleta monocromática de los gráficos. Los colores se leen de los tokens CSS
+ * en cada render para que acompañen al tema claro u oscuro.
+ */
 function cssVar(name: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(name);
   return value.trim() || fallback;
+}
+
+/** Devuelve el mismo color con transparencia para rellenos suaves. */
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return `rgba(128, 128, 128, ${alpha})`;
+}
+
+/** Rampa de grises para categorías que no tienen un color propio. */
+function monoPalette(): string[] {
+  const dark =
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-theme') === 'dark';
+  return dark
+    ? [
+        '#f2f2f2',
+        '#d9d9d9',
+        '#c2c2c2',
+        '#a8a8a8',
+        '#8f8f8f',
+        '#737373',
+        '#5c5c5c',
+        '#e6e6e6',
+        '#b8b8b8',
+        '#9c9c9c',
+      ]
+    : [
+        '#1f1f1f',
+        '#3d3d3d',
+        '#5c5c5c',
+        '#7a7a7a',
+        '#999999',
+        '#b8b8b8',
+        '#2b2b2b',
+        '#4d4d4d',
+        '#6b6b6b',
+        '#8a8a8a',
+      ];
 }
 
 interface DualSeriesProps {
@@ -50,6 +96,8 @@ interface DualSeriesProps {
   expenses: number[];
   currency: string;
   height?: number;
+  /** «line» para tendencias continuas; «bar» para totales por período. */
+  variant?: 'line' | 'bar';
 }
 
 /** Ingresos frente a gastos. */
@@ -59,8 +107,95 @@ export function IncomeExpenseChart({
   expenses,
   currency,
   height = 220,
+  variant = 'line',
 }: DualSeriesProps) {
   const exponent = exponentOf(currency);
+  const incomeColor = cssVar('--income', '#1f1f1f');
+  const expenseColor = cssVar('--expense', '#666666');
+  const tickColor = cssVar('--text-soft', '#6f6f6f');
+  const gridColor = cssVar('--chart-grid', 'rgba(0, 0, 0, 0.08)');
+
+  if (variant === 'bar') {
+    return (
+      <Bar
+        height={height}
+        data={{
+          labels,
+          datasets: [
+            {
+              label: 'Ingresos',
+              data: income,
+              backgroundColor: incomeColor,
+              borderRadius: 4,
+              borderSkipped: false,
+              maxBarThickness: 40,
+              categoryPercentage: 0.7,
+              barPercentage: 0.9,
+            },
+            {
+              label: 'Gastos',
+              data: expenses,
+              backgroundColor: expenseColor,
+              borderRadius: 4,
+              borderSkipped: false,
+              maxBarThickness: 40,
+              categoryPercentage: 0.7,
+              barPercentage: 0.9,
+            },
+          ],
+        }}
+        options={{
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                color: tickColor,
+                boxWidth: 10,
+                boxHeight: 10,
+                usePointStyle: true,
+                pointStyle: 'rectRounded',
+                font: { size: 11 },
+              },
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) =>
+                  `${context.dataset.label}: ${formatAmount(
+                    Number(context.parsed.y ?? 0),
+                    exponent,
+                  )}`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: tickColor,
+                font: { size: 10 },
+                maxRotation: 0,
+                autoSkip: true,
+              },
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: gridColor },
+              border: { display: false },
+              ticks: {
+                color: tickColor,
+                font: { size: 10 },
+                callback: (value) => formatAmount(Number(value), exponent),
+              },
+            },
+          },
+        }}
+      />
+    );
+  }
+
   return (
     <Line
       height={height}
@@ -70,8 +205,8 @@ export function IncomeExpenseChart({
           {
             label: 'Ingresos',
             data: income,
-            borderColor: INCOME,
-            backgroundColor: 'rgba(47, 122, 90, 0.12)',
+            borderColor: incomeColor,
+            backgroundColor: withAlpha(incomeColor, 0.12),
             tension: 0.32,
             borderWidth: 2,
             pointRadius: 0,
@@ -81,8 +216,8 @@ export function IncomeExpenseChart({
           {
             label: 'Gastos',
             data: expenses,
-            borderColor: EXPENSE,
-            backgroundColor: 'rgba(176, 87, 75, 0.1)',
+            borderColor: expenseColor,
+            backgroundColor: withAlpha(expenseColor, 0.1),
             tension: 0.32,
             borderWidth: 2,
             pointRadius: 0,
@@ -99,7 +234,7 @@ export function IncomeExpenseChart({
           legend: {
             position: 'bottom',
             labels: {
-              color: TICK,
+              color: tickColor,
               boxWidth: 10,
               boxHeight: 10,
               usePointStyle: true,
@@ -120,13 +255,13 @@ export function IncomeExpenseChart({
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: TICK, font: { size: 10 }, maxRotation: 0, autoSkip: true },
+            ticks: { color: tickColor, font: { size: 10 }, maxRotation: 0, autoSkip: true },
           },
           y: {
-            grid: { color: GRID },
+            grid: { color: gridColor },
             border: { display: false },
             ticks: {
-              color: TICK,
+              color: tickColor,
               font: { size: 10 },
               callback: (value) => formatAmount(Number(value), exponent),
             },
@@ -147,6 +282,9 @@ interface BalanceLineProps {
 /** Evolución del saldo. */
 export function BalanceChart({ labels, values, currency, height = 220 }: BalanceLineProps) {
   const exponent = exponentOf(currency);
+  const accentColor = cssVar('--accent', '#1a1a1a');
+  const tickColor = cssVar('--text-soft', '#6f6f6f');
+  const gridColor = cssVar('--chart-grid', 'rgba(0, 0, 0, 0.08)');
   return (
     <Line
       height={height}
@@ -156,8 +294,8 @@ export function BalanceChart({ labels, values, currency, height = 220 }: Balance
           {
             label: 'Saldo',
             data: values,
-            borderColor: ACCENT,
-            backgroundColor: 'rgba(176, 139, 74, 0.12)',
+            borderColor: accentColor,
+            backgroundColor: withAlpha(accentColor, 0.12),
             tension: 0.3,
             borderWidth: 2,
             pointRadius: 0,
@@ -182,13 +320,13 @@ export function BalanceChart({ labels, values, currency, height = 220 }: Balance
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: TICK, font: { size: 10 }, maxRotation: 0, autoSkip: true },
+            ticks: { color: tickColor, font: { size: 10 }, maxRotation: 0, autoSkip: true },
           },
           y: {
-            grid: { color: GRID },
+            grid: { color: gridColor },
             border: { display: false },
             ticks: {
-              color: TICK,
+              color: tickColor,
               font: { size: 10 },
               callback: (value) => formatAmount(Number(value), exponent),
             },
@@ -205,19 +343,6 @@ interface CategorySlice {
   color: string | null;
 }
 
-const PALETTE = [
-  '#b08b4a',
-  '#4c7ba8',
-  '#3f8a7a',
-  '#b0574b',
-  '#7a62a8',
-  '#c2703d',
-  '#6c6f86',
-  '#8a6f9c',
-  '#4f7d3f',
-  '#b0768c',
-];
-
 /** Distribución de gastos por categoría. */
 export function CategoryDonut({
   slices,
@@ -230,6 +355,8 @@ export function CategoryDonut({
 }) {
   const exponent = exponentOf(currency);
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
+  const palette = monoPalette();
+  const tickColor = cssVar('--text-soft', '#6f6f6f');
   return (
     <Doughnut
       height={height}
@@ -239,7 +366,7 @@ export function CategoryDonut({
           {
             data: slices.map((slice) => slice.amount),
             backgroundColor: slices.map(
-              (slice, index) => slice.color ?? PALETTE[index % PALETTE.length],
+              (slice, index) => slice.color ?? palette[index % palette.length],
             ),
             borderColor: cssVar('--surface', '#ffffff'),
             borderWidth: 2,
@@ -255,7 +382,7 @@ export function CategoryDonut({
           legend: {
             position: 'bottom',
             labels: {
-              color: TICK,
+              color: tickColor,
               boxWidth: 9,
               boxHeight: 9,
               usePointStyle: true,
@@ -294,6 +421,7 @@ export function BreakdownBars({
   currency: string;
 }) {
   const exponent = exponentOf(currency);
+  const palette = monoPalette();
   const max = items.reduce((sum, item) => Math.max(sum, item.amount), 0) || 1;
   return (
     <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 14 }}>
@@ -312,7 +440,7 @@ export function BreakdownBars({
               className="progress-bar"
               style={{
                 width: `${Math.max(2, (item.amount / max) * 100)}%`,
-                background: item.color ?? PALETTE[index % PALETTE.length],
+                background: item.color ?? palette[index % palette.length],
               }}
             />
           </div>

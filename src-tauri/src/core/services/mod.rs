@@ -9,6 +9,7 @@ pub mod backup;
 pub mod budgets;
 pub mod categories;
 pub mod deposits;
+pub mod excel;
 pub mod export;
 pub mod payables;
 pub mod purchases;

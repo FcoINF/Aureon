@@ -246,6 +246,13 @@ export const api = {
   refreshOverdueStatus: () => call<void>('refresh_overdue_status'),
   exportDataset: (dataset: string, filter?: TransactionFilter) =>
     call<string>('export_dataset', { dataset, filter }),
+  exportExcelReport: (
+    path: string,
+    filter: TransactionFilter,
+    currency: string,
+    periodLabel: string,
+  ) =>
+    call<string>('export_excel_report', { path, filter, currency, periodLabel }),
   writeTextFile: (path: string, contents: string) =>
     call<string>('write_text_file', { path, contents }),
   writeBase64File: (path: string, contents: string) =>

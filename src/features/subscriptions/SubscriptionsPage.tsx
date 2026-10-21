@@ -61,6 +61,7 @@ export function SubscriptionsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [chargeOnOpen, setChargeOnOpen] = useState(false);
   const [cancelling, setCancelling] = useState<Subscription | null>(null);
+  const [deleting, setDeleting] = useState<Subscription | null>(null);
   const [busy, setBusy] = useState(false);
 
   const openDetail = (id: string, withCharge: boolean) => {
@@ -151,6 +152,41 @@ export function SubscriptionsPage() {
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'No se pudo cancelar la suscripción.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * El backend sólo permite eliminar suscripciones sin cobros registrados.
+   * Si ya tiene cobros se avisa aquí, antes de abrir la confirmación, para
+   * que la persona usuaria sepa que debe cancelarla en su lugar.
+   */
+  const requestDelete = (subscription: Subscription) => {
+    if (subscription.paymentCount > 0) {
+      toast.error(
+        subscription.status === 'cancelled'
+          ? 'Esta suscripción conserva cobros registrados, así que no puede eliminarse para no perder el historial.'
+          : 'Esta suscripción tiene cobros registrados. Cancélala en lugar de eliminarla para conservar el historial.',
+      );
+      return;
+    }
+    setDeleting(subscription);
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.deleteSubscription(deleting.id);
+      toast.success('Suscripción eliminada.');
+      setDeleting(null);
+      setDetailId(null);
+      handleChanged();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'No se pudo eliminar la suscripción.',
       );
     } finally {
       setBusy(false);
@@ -378,6 +414,19 @@ export function SubscriptionsPage() {
                           >
                             <Icon name="close" size={14} />
                           </button>
+                          <button
+                            type="button"
+                            className="btn btn-icon"
+                            title={
+                              item.paymentCount > 0
+                                ? 'Conserva cobros registrados: no puede eliminarse'
+                                : 'Eliminar suscripción'
+                            }
+                            aria-label={`Eliminar ${item.name}`}
+                            onClick={() => requestDelete(item)}
+                          >
+                            <Icon name="trash" size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -413,6 +462,7 @@ export function SubscriptionsPage() {
           }}
           onChanged={handleChanged}
           onRequestCancel={(subscription) => setCancelling(subscription)}
+          onRequestDelete={requestDelete}
         />
       ) : null}
 
@@ -430,6 +480,21 @@ export function SubscriptionsPage() {
         onConfirm={handleCancel}
         onCancel={() => setCancelling(null)}
       />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Eliminar suscripción"
+        message={
+          deleting
+            ? `Se eliminará «${deleting.name}» de forma permanente, junto con sus participantes. Esta acción no se puede deshacer.`
+            : ''
+        }
+        confirmLabel="Eliminar"
+        danger
+        busy={busy}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleting(null)}
+      />
     </>
   );
 }
@@ -440,6 +505,7 @@ interface SubscriptionDetailProps {
   onClose: () => void;
   onChanged: () => void;
   onRequestCancel: (subscription: Subscription) => void;
+  onRequestDelete: (subscription: Subscription) => void;
 }
 
 function SubscriptionDetailModal({
@@ -448,6 +514,7 @@ function SubscriptionDetailModal({
   onClose,
   onChanged,
   onRequestCancel,
+  onRequestDelete,
 }: SubscriptionDetailProps) {
   const { accounts } = useAppData();
   const toast = useToast();
@@ -687,10 +754,20 @@ function SubscriptionDetailModal({
                 <Icon name="close" size={13} />
                 Cancelar suscripción
               </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onRequestDelete(data)}
+              >
+                <Icon name="trash" size={13} />
+                Eliminar
+              </button>
             </div>
             <p className="text-sm text-soft">
               Registrar un cobro genera un gasto en tus movimientos y actualiza el
-              próximo cobro según la frecuencia.
+              próximo cobro según la frecuencia. Sólo las suscripciones sin cobros
+              registrados pueden eliminarse; si ya tiene cobros, cancélala para
+              conservar el historial.
             </p>
           </div>
 

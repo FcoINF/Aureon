@@ -299,18 +299,18 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- Categorías por defecto (no son datos ficticios: son la plantilla inicial editable).
 INSERT OR IGNORE INTO categories (id, name, kind, color, archived, created_at) VALUES
-    ('cat-alimentacion',   'Alimentación',      'expense', '#C2703D', 0, '2024-01-01T00:00:00Z'),
-    ('cat-transporte',     'Transporte',        'expense', '#4C7BA8', 0, '2024-01-01T00:00:00Z'),
-    ('cat-vivienda',       'Vivienda',          'expense', '#6C6F86', 0, '2024-01-01T00:00:00Z'),
-    ('cat-servicios',      'Servicios básicos', 'expense', '#3F8A7A', 0, '2024-01-01T00:00:00Z'),
-    ('cat-salud',          'Salud',             'expense', '#C05A6B', 0, '2024-01-01T00:00:00Z'),
-    ('cat-educacion',      'Educación',         'expense', '#7A62A8', 0, '2024-01-01T00:00:00Z'),
-    ('cat-entretenimiento','Entretenimiento',   'expense', '#C08A3E', 0, '2024-01-01T00:00:00Z'),
-    ('cat-compras',        'Compras online',   'expense', '#B0674F', 0, '2024-01-01T00:00:00Z'),
-    ('cat-suscripciones',  'Suscripciones',     'expense', '#8A6F9C', 0, '2024-01-01T00:00:00Z'),
-    ('cat-tecnologia',     'Tecnología',        'expense', '#4C7BA8', 0, '2024-01-01T00:00:00Z'),
-    ('cat-ropa',           'Ropa',              'expense', '#B0768C', 0, '2024-01-01T00:00:00Z'),
-    ('cat-ahorro',         'Ahorro',            'expense', '#3F8A7A', 0, '2024-01-01T00:00:00Z'),
-    ('cat-salud-otros',    'Otros gastos',      'expense', '#7B7F8A', 0, '2024-01-01T00:00:00Z'),
-    ('cat-laboral',        'Ingresos laborales','income',  '#2F7A5A', 0, '2024-01-01T00:00:00Z'),
-    ('cat-ingresos-otros', 'Otros ingresos',    'income',  '#3F8A7A', 0, '2024-01-01T00:00:00Z');
+    ('cat-alimentacion',   'Alimentación',      'expense', '#5A5A5A', 0, '2024-01-01T00:00:00Z'),
+    ('cat-transporte',     'Transporte',        'expense', '#4D4D4D', 0, '2024-01-01T00:00:00Z'),
+    ('cat-vivienda',       'Vivienda',          'expense', '#6B6B6B', 0, '2024-01-01T00:00:00Z'),
+    ('cat-servicios',      'Servicios básicos', 'expense', '#454545', 0, '2024-01-01T00:00:00Z'),
+    ('cat-salud',          'Salud',             'expense', '#7A7A7A', 0, '2024-01-01T00:00:00Z'),
+    ('cat-educacion',      'Educación',         'expense', '#616161', 0, '2024-01-01T00:00:00Z'),
+    ('cat-entretenimiento','Entretenimiento',   'expense', '#8A8A8A', 0, '2024-01-01T00:00:00Z'),
+    ('cat-compras',        'Compras online',   'expense', '#525252', 0, '2024-01-01T00:00:00Z'),
+    ('cat-suscripciones',  'Suscripciones',     'expense', '#737373', 0, '2024-01-01T00:00:00Z'),
+    ('cat-tecnologia',     'Tecnología',        'expense', '#666666', 0, '2024-01-01T00:00:00Z'),
+    ('cat-ropa',           'Ropa',              'expense', '#999999', 0, '2024-01-01T00:00:00Z'),
+    ('cat-ahorro',         'Ahorro',            'expense', '#4A4A4A', 0, '2024-01-01T00:00:00Z'),
+    ('cat-salud-otros',    'Otros gastos',      'expense', '#7F7F7F', 0, '2024-01-01T00:00:00Z'),
+    ('cat-laboral',        'Ingresos laborales','income',  '#A6A6A6', 0, '2024-01-01T00:00:00Z'),
+    ('cat-ingresos-otros', 'Otros ingresos',    'income',  '#949494', 0, '2024-01-01T00:00:00Z');

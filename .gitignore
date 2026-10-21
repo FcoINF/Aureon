@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Datos locales y exportaciones de Aureon
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+aureon-*.xlsx
+aureon-*.pdf
+aureon-*.csv
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

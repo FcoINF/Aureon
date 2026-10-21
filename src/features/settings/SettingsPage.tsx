@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 
 import { Icon } from '../../components/Icons';
-import { ConfirmDialog } from '../../components/Modal';
+import { ConfirmDialog, Modal } from '../../components/Modal';
 import { EmptyState, Field, PageHeader } from '../../components/Primitives';
 import { useToast } from '../../components/Toast';
 import { useAsync } from '../../hooks/useAsync';
@@ -30,7 +30,59 @@ const DATASETS: { id: string; label: string; file: string }[] = [
   { id: 'deposits', label: 'Depósitos pendientes', file: 'aureon-depositos' },
 ];
 
-const CATEGORY_COLORS = ['#b08b4a', '#4c7ba8', '#3f8a7a', '#b0574b', '#7a62a8', '#c2703d'];
+const CATEGORY_COLORS = ['#1F1F1F', '#4D4D4D', '#6F6F6F', '#8F8F8F', '#B3B3B3', '#D9D9D9'];
+
+/** Selector de color compartido por la creación y la edición de categorías. */
+function CategoryColorPicker({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string;
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const selectedColor = value.toUpperCase();
+  return (
+    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <input
+        id={id}
+        type="color"
+        value={value}
+        aria-label="Color de la categoría"
+        title="Elegir un color personalizado"
+        onChange={(event) => onChange(event.target.value)}
+        style={{
+          width: 42,
+          height: 34,
+          padding: 2,
+          border: '1px solid var(--border-strong)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--surface)',
+        }}
+      />
+      {CATEGORY_COLORS.map((color) => {
+        const selected = selectedColor === color;
+        return (
+          <button
+            key={color}
+            type="button"
+            className="btn btn-icon"
+            title={`Usar el color ${color}`}
+            aria-label={`Usar el color ${color}`}
+            aria-pressed={selected}
+            onClick={() => onChange(color)}
+            style={{
+              background: color,
+              outline: selected ? '2px solid var(--text)' : undefined,
+              outlineOffset: 2,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 export function SettingsPage() {
   const { settings, currencies, setSettings, refresh } = useAppData();
@@ -57,6 +109,11 @@ export function SettingsPage() {
   const [categoryColor, setCategoryColor] = useState(CATEGORY_COLORS[0]);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categoryBusy, setCategoryBusy] = useState(false);
+
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editColor, setEditColor] = useState(CATEGORY_COLORS[0]);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
 
   const [backupPath, setBackupPath] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
@@ -116,6 +173,36 @@ export function SettingsPage() {
       toast.error(message);
     } finally {
       setCategoryBusy(false);
+    }
+  };
+
+  const openCategoryColorEditor = (category: Category) => {
+    setEditingCategory(category);
+    setEditColor(category.color ?? CATEGORY_COLORS[0]);
+    setEditError(null);
+  };
+
+  const handleSaveCategoryColor = async () => {
+    if (!editingCategory) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await api.updateCategory(editingCategory.id, {
+        name: editingCategory.name,
+        kind: editingCategory.kind,
+        color: editColor,
+      });
+      toast.success('Color de la categoría actualizado.');
+      setEditingCategory(null);
+      categories.reload();
+      await refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'No se pudo actualizar el color de la categoría.';
+      setEditError(message);
+      toast.error(message);
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -393,34 +480,11 @@ export function SettingsPage() {
 
             <Field label="Color">
               {(id) => (
-                <div className="row" style={{ gap: 8 }}>
-                  <input
-                    id={id}
-                    type="color"
-                    value={categoryColor}
-                    aria-label="Color de la categoría"
-                    onChange={(event) => setCategoryColor(event.target.value)}
-                    style={{
-                      width: 42,
-                      height: 34,
-                      padding: 2,
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--surface)',
-                    }}
-                  />
-                  {CATEGORY_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className="btn btn-icon"
-                      title={`Usar el color ${color}`}
-                      aria-label={`Usar el color ${color}`}
-                      onClick={() => setCategoryColor(color)}
-                      style={{ background: color }}
-                    />
-                  ))}
-                </div>
+                <CategoryColorPicker
+                  id={id}
+                  value={categoryColor}
+                  onChange={setCategoryColor}
+                />
               )}
             </Field>
 
@@ -437,6 +501,11 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+
+          <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-4)' }}>
+            Puedes cambiar el color de cualquier categoría, incluidas las predeterminadas,
+            con el botón de editar de cada fila.
+          </p>
 
           {categories.loading ? (
             <div className="loading">
@@ -494,6 +563,15 @@ export function SettingsPage() {
                       </td>
                       <td>
                         <div className="table-actions">
+                          <button
+                            type="button"
+                            className="btn btn-icon"
+                            title="Editar color"
+                            aria-label={`Editar color de ${category.name}`}
+                            onClick={() => openCategoryColorEditor(category)}
+                          >
+                            <Icon name="edit" size={14} />
+                          </button>
                           <button
                             type="button"
                             className="btn btn-icon"
@@ -669,6 +747,59 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <Modal
+        open={editingCategory !== null}
+        title="Editar color de categoría"
+        subtitle={
+          editingCategory
+            ? `${editingCategory.name} · ${
+                editingCategory.kind === 'income' ? 'Ingreso' : 'Gasto'
+              }`
+            : undefined
+        }
+        onClose={() => {
+          if (!editBusy) setEditingCategory(null);
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setEditingCategory(null)}
+              disabled={editBusy}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void handleSaveCategoryColor()}
+              disabled={editBusy}
+            >
+              {editBusy ? 'Guardando…' : 'Guardar color'}
+            </button>
+          </>
+        }
+      >
+        {editError ? (
+          <div className="alert alert-error" style={{ marginBottom: 'var(--space-4)' }}>
+            {editError}
+          </div>
+        ) : null}
+
+        <div className="form-section">
+          <p className="form-section-title">Color</p>
+          <Field
+            label="Color de la categoría"
+            hint="Se usa en los gráficos, en los movimientos y en los presupuestos."
+          >
+            {(id) => (
+              <CategoryColorPicker id={id} value={editColor} onChange={setEditColor} />
+            )}
+          </Field>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={restorePath !== null}
